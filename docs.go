@@ -719,10 +719,14 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 				collectSchemas(inputMeta)
 			}
 
+			contentType := handlerSpec.ContentType
+			if contentType == "" {
+				contentType = "application/json"
+			}
 			operation.RequestBody = &openapi.RequestBody{
 				Required: true,
 				Content: map[string]openapi.MediaType{
-					"application/json": {
+					contentType: {
 						Schema: &openapi.Schema{Ref: "#/components/schemas/" + handlerSpec.InputTypeName},
 					},
 				},
@@ -749,11 +753,15 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 				},
 			}
 		} else {
-			// Standard JSON response
+			// Standard response
+			responseContentType := handlerSpec.ContentType
+			if responseContentType == "" {
+				responseContentType = "application/json"
+			}
 			operation.Responses[fmt.Sprintf("%d", handlerSpec.SuccessStatus)] = openapi.Response{
 				Description: "Success",
 				Content: map[string]openapi.MediaType{
-					"application/json": {
+					responseContentType: {
 						Schema: &openapi.Schema{Ref: "#/components/schemas/" + handlerSpec.OutputTypeName},
 					},
 				},

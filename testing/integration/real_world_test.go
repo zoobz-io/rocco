@@ -22,8 +22,21 @@ type User struct {
 }
 
 type CreateUserInput struct {
-	Name  string `json:"name" validate:"required,min=1,max=100"`
-	Email string `json:"email" validate:"required,email"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// realWorldFailingValidator is a test validator that always fails validation.
+type realWorldFailingValidator[In, Out any] struct{}
+
+func (realWorldFailingValidator[In, Out]) ValidateInput(In) error {
+	return rocco.NewValidationError([]rocco.ValidationFieldError{
+		{Field: "name", Tag: "required", Value: ""},
+	})
+}
+
+func (realWorldFailingValidator[In, Out]) ValidateOutput(Out) error {
+	return nil
 }
 
 type UpdateUserInput struct {
@@ -421,54 +434,27 @@ func TestRealWorld_ValidationErrors(t *testing.T) {
 		"POST",
 		"/users",
 		func(_ *rocco.Request[CreateUserInput]) (User, error) {
+			t.Error("handler should not be called on validation error")
 			return User{}, nil
 		},
-	)
+	).WithValidator(realWorldFailingValidator[CreateUserInput, User]{})
 	engine.WithHandlers(handler)
 
-	tests := []struct {
-		name       string
-		input      map[string]any
-		wantStatus int
-	}{
-		{
-			name:       "MissingName",
-			input:      map[string]any{"email": "test@example.com"},
-			wantStatus: http.StatusUnprocessableEntity,
-		},
-		{
-			name:       "MissingEmail",
-			input:      map[string]any{"name": "John"},
-			wantStatus: http.StatusUnprocessableEntity,
-		},
-		{
-			name:       "InvalidEmail",
-			input:      map[string]any{"name": "John", "email": "not-an-email"},
-			wantStatus: http.StatusUnprocessableEntity,
-		},
-		{
-			name:       "NameTooLong",
-			input:      map[string]any{"name": string(make([]byte, 150)), "email": "test@example.com"},
-			wantStatus: http.StatusUnprocessableEntity,
-		},
-		{
-			name:       "ValidInput",
-			input:      map[string]any{"name": "John", "email": "john@example.com"},
-			wantStatus: http.StatusOK,
-		},
+	// Test that validation errors return 422
+	body, _ := json.Marshal(map[string]any{"name": "John", "email": "john@example.com"})
+	req := httptest.NewRequest("POST", "/users", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	engine.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected %d, got %d: %s", http.StatusUnprocessableEntity, w.Code, w.Body.String())
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			body, _ := json.Marshal(tt.input)
-			req := httptest.NewRequest("POST", "/users", bytes.NewReader(body))
-			w := httptest.NewRecorder()
-			engine.Router().ServeHTTP(w, req)
-
-			if w.Code != tt.wantStatus {
-				t.Errorf("expected %d, got %d: %s", tt.wantStatus, w.Code, w.Body.String())
-			}
-		})
+	// Verify error response structure
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != "VALIDATION_FAILED" {
+		t.Errorf("expected code 'VALIDATION_FAILED', got %v", resp["code"])
 	}
 }
 

@@ -13,6 +13,21 @@ import (
 	"testing"
 )
 
+// failingValidator is a test validator that always fails validation.
+type failingValidator[In, Out any] struct{}
+
+func (failingValidator[In, Out]) ValidateInput(In) error {
+	return NewValidationError([]ValidationFieldError{
+		{Field: "test", Tag: "required", Value: ""},
+	})
+}
+
+func (failingValidator[In, Out]) ValidateOutput(Out) error {
+	return NewValidationError([]ValidationFieldError{
+		{Field: "test", Tag: "required", Value: ""},
+	})
+}
+
 // errorReader is a reader that always returns an error
 type errorReader struct{}
 
@@ -408,8 +423,8 @@ func TestGetRoccoError(t *testing.T) {
 
 func TestHandler_ValidationInput(t *testing.T) {
 	type validatedInput struct {
-		Email string `json:"email" validate:"required,email"`
-		Age   int    `json:"age" validate:"required,min=18"`
+		Email string `json:"email"`
+		Age   int    `json:"age"`
 	}
 
 	handler := NewHandler[validatedInput, testOutput](
@@ -419,11 +434,11 @@ func TestHandler_ValidationInput(t *testing.T) {
 		func(_ *Request[validatedInput]) (testOutput, error) {
 			return testOutput{Message: "valid"}, nil
 		},
-	)
+	).WithValidator(failingValidator[validatedInput, testOutput]{})
 
-	// Test invalid input
-	invalidInput := `{"email":"notanemail","age":15}`
-	req := httptest.NewRequest("POST", "/test", bytes.NewReader([]byte(invalidInput)))
+	// Test input validation with failing validator
+	input := `{"email":"test@example.com","age":25}`
+	req := httptest.NewRequest("POST", "/test", bytes.NewReader([]byte(input)))
 	w := httptest.NewRecorder()
 
 	_, err := handler.Process(context.Background(), req, w)
@@ -447,7 +462,7 @@ func TestHandler_ValidationInput(t *testing.T) {
 
 func TestHandler_ValidationOutput(t *testing.T) {
 	type validatedOutput struct {
-		Email string `json:"email" validate:"required,email"`
+		Email string `json:"email"`
 	}
 
 	handler := NewHandler[NoBody, validatedOutput](
@@ -455,10 +470,10 @@ func TestHandler_ValidationOutput(t *testing.T) {
 		"GET",
 		"/test",
 		func(_ *Request[NoBody]) (validatedOutput, error) {
-			// Return invalid output
-			return validatedOutput{Email: "notanemail"}, nil
+			return validatedOutput{Email: "test@example.com"}, nil
 		},
-	).WithOutputValidation() // Opt-in to output validation for this test
+	).WithValidator(failingValidator[NoBody, validatedOutput]{}).
+		WithOutputValidation() // Opt-in to output validation for this test
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
@@ -901,4 +916,123 @@ type failingCloser struct {
 
 func (f *failingCloser) Close() error {
 	return errors.New("close failed")
+}
+
+// mockCodec is a test codec that uses a custom content type.
+type mockCodec struct {
+	contentType string
+}
+
+func (m mockCodec) ContentType() string {
+	return m.contentType
+}
+
+func (m mockCodec) Marshal(v any) ([]byte, error) {
+	return json.Marshal(v) // Use JSON under the hood for simplicity
+}
+
+func (m mockCodec) Unmarshal(data []byte, v any) error {
+	return json.Unmarshal(data, v)
+}
+
+func TestHandler_DefaultCodec(t *testing.T) {
+	handler := NewHandler[testInput, testOutput](
+		"test",
+		"POST",
+		"/test",
+		func(_ *Request[testInput]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	)
+
+	spec := handler.Spec()
+	if spec.ContentType != "application/json" {
+		t.Errorf("expected default content type 'application/json', got %q", spec.ContentType)
+	}
+}
+
+func TestHandler_WithCodec(t *testing.T) {
+	xmlCodec := mockCodec{contentType: "application/xml"}
+
+	handler := NewHandler[testInput, testOutput](
+		"test",
+		"POST",
+		"/test",
+		func(_ *Request[testInput]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	).WithCodec(xmlCodec)
+
+	spec := handler.Spec()
+	if spec.ContentType != "application/xml" {
+		t.Errorf("expected content type 'application/xml', got %q", spec.ContentType)
+	}
+}
+
+func TestHandler_WithCodec_ResponseContentType(t *testing.T) {
+	xmlCodec := mockCodec{contentType: "application/xml"}
+
+	handler := NewHandler[NoBody, testOutput](
+		"test",
+		"GET",
+		"/test",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{Message: "hello"}, nil
+		},
+	).WithCodec(xmlCodec)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+
+	_, err := handler.Process(context.Background(), req, w)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if w.Header().Get("Content-Type") != "application/xml" {
+		t.Errorf("expected Content-Type 'application/xml', got %q", w.Header().Get("Content-Type"))
+	}
+}
+
+func TestHandler_ApplyDefaultCodec(t *testing.T) {
+	xmlCodec := mockCodec{contentType: "application/xml"}
+
+	handler := NewHandler[testInput, testOutput](
+		"test",
+		"POST",
+		"/test",
+		func(_ *Request[testInput]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	)
+
+	// Simulate what engine does
+	handler.applyDefaultCodec(xmlCodec)
+
+	spec := handler.Spec()
+	if spec.ContentType != "application/xml" {
+		t.Errorf("expected content type 'application/xml', got %q", spec.ContentType)
+	}
+}
+
+func TestHandler_ApplyDefaultCodec_DoesNotOverrideExplicit(t *testing.T) {
+	xmlCodec := mockCodec{contentType: "application/xml"}
+	yamlCodec := mockCodec{contentType: "application/yaml"}
+
+	handler := NewHandler[testInput, testOutput](
+		"test",
+		"POST",
+		"/test",
+		func(_ *Request[testInput]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	).WithCodec(xmlCodec) // Explicitly set
+
+	// Engine tries to apply its default
+	handler.applyDefaultCodec(yamlCodec)
+
+	spec := handler.Spec()
+	if spec.ContentType != "application/xml" {
+		t.Errorf("expected content type 'application/xml' (explicit), got %q", spec.ContentType)
+	}
 }

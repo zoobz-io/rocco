@@ -35,6 +35,7 @@ type Engine struct {
 	spec                *EngineSpec // OpenAPI specification configuration
 	cachedOpenAPISpec   []byte      // Cached JSON-encoded OpenAPI spec
 	openAPIOnce         sync.Once   // Ensures OpenAPI spec is generated only once
+	codec               Codec       // Default codec for handlers (nil = use handler default)
 }
 
 // NewEngine creates a new Engine with identity extraction.
@@ -93,6 +94,13 @@ func (e *Engine) WithMiddleware(middleware ...func(http.Handler) http.Handler) *
 	return e
 }
 
+// WithCodec sets the default codec for all handlers registered with this engine.
+// Handlers that explicitly call WithCodec() will use their own codec instead.
+func (e *Engine) WithCodec(codec Codec) *Engine {
+	e.codec = codec
+	return e
+}
+
 // WithSpec sets the engine specification for OpenAPI generation.
 func (e *Engine) WithSpec(spec *EngineSpec) *Engine {
 	e.spec = spec
@@ -139,6 +147,13 @@ func (e *Engine) WithHandlers(handlers ...Endpoint) *Engine {
 	e.ensureDefaultHandlers()
 
 	for _, handler := range handlers {
+		// Apply engine's default codec if handler supports it and engine has one
+		if e.codec != nil {
+			if ca, ok := handler.(codecApplier); ok {
+				ca.applyDefaultCodec(e.codec)
+			}
+		}
+
 		// Store handler for OpenAPI generation.
 		e.handlers = append(e.handlers, handler)
 
@@ -201,7 +216,7 @@ func (e *Engine) buildAuthMiddleware() func(http.Handler) http.Handler {
 					PathKey.Field(r.URL.Path),
 					ErrorKey.Field(err.Error()),
 				)
-				writeError(ctx, w, ErrUnauthorized, "auth")
+				writeError(ctx, w, ErrUnauthorized, defaultCodec.ContentType(), "auth")
 				return
 			}
 
@@ -240,13 +255,13 @@ func (*Engine) buildAuthorizationMiddleware(handler Endpoint) func(http.Handler)
 			// Extract identity from context (should exist from auth middleware)
 			val := ctx.Value(identityContextKey)
 			if val == nil {
-				writeError(ctx, w, ErrForbidden.WithMessage("identity not found"), handlerSpec.Name)
+				writeError(ctx, w, ErrForbidden.WithMessage("identity not found"), defaultCodec.ContentType(), handlerSpec.Name)
 				return
 			}
 
 			identity, ok := val.(Identity)
 			if !ok {
-				writeError(ctx, w, ErrForbidden.WithMessage("invalid identity"), handlerSpec.Name)
+				writeError(ctx, w, ErrForbidden.WithMessage("invalid identity"), defaultCodec.ContentType(), handlerSpec.Name)
 				return
 			}
 
@@ -267,7 +282,7 @@ func (*Engine) buildAuthorizationMiddleware(handler Endpoint) func(http.Handler)
 						IdentityIDKey.Field(identity.ID()),
 						RequiredScopesKey.Field(strings.Join(scopeGroup, ",")),
 					)
-					writeError(ctx, w, ErrForbidden.WithMessage("insufficient scope"), handlerSpec.Name)
+					writeError(ctx, w, ErrForbidden.WithMessage("insufficient scope"), defaultCodec.ContentType(), handlerSpec.Name)
 					return
 				}
 			}
@@ -289,7 +304,7 @@ func (*Engine) buildAuthorizationMiddleware(handler Endpoint) func(http.Handler)
 						IdentityIDKey.Field(identity.ID()),
 						RequiredRolesKey.Field(strings.Join(roleGroup, ",")),
 					)
-					writeError(ctx, w, ErrForbidden.WithMessage("insufficient role"), handlerSpec.Name)
+					writeError(ctx, w, ErrForbidden.WithMessage("insufficient role"), defaultCodec.ContentType(), handlerSpec.Name)
 					return
 				}
 			}
@@ -317,13 +332,13 @@ func (*Engine) buildUsageLimitMiddleware(handler Endpoint) func(http.Handler) ht
 			// Extract identity from context (should exist from auth middleware)
 			val := ctx.Value(identityContextKey)
 			if val == nil {
-				writeError(ctx, w, ErrForbidden.WithMessage("identity not found"), handlerSpec.Name)
+				writeError(ctx, w, ErrForbidden.WithMessage("identity not found"), defaultCodec.ContentType(), handlerSpec.Name)
 				return
 			}
 
 			identity, ok := val.(Identity)
 			if !ok {
-				writeError(ctx, w, ErrForbidden.WithMessage("invalid identity"), handlerSpec.Name)
+				writeError(ctx, w, ErrForbidden.WithMessage("invalid identity"), defaultCodec.ContentType(), handlerSpec.Name)
 				return
 			}
 
@@ -347,7 +362,7 @@ func (*Engine) buildUsageLimitMiddleware(handler Endpoint) func(http.Handler) ht
 						CurrentValueKey.Field(currentValue),
 						ThresholdKey.Field(threshold),
 					)
-					writeError(ctx, w, ErrTooManyRequests, handlerSpec.Name)
+					writeError(ctx, w, ErrTooManyRequests, defaultCodec.ContentType(), handlerSpec.Name)
 					return
 				}
 			}

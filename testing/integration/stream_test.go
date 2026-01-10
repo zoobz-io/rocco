@@ -19,7 +19,20 @@ type streamEvent struct {
 }
 
 type streamInput struct {
-	Topic string `json:"topic" validate:"required"`
+	Topic string `json:"topic"`
+}
+
+// streamFailingValidator is a test validator that always fails validation.
+type streamFailingValidator[In, Out any] struct{}
+
+func (streamFailingValidator[In, Out]) ValidateInput(In) error {
+	return rocco.NewValidationError([]rocco.ValidationFieldError{
+		{Field: "topic", Tag: "required", Value: ""},
+	})
+}
+
+func (streamFailingValidator[In, Out]) ValidateOutput(Out) error {
+	return nil
 }
 
 func TestStreamHandler_FullLifecycle(t *testing.T) {
@@ -287,12 +300,11 @@ func TestStreamHandler_ValidationError(t *testing.T) {
 			t.Error("handler should not be called on validation error")
 			return nil
 		},
-	)
+	).WithValidator(streamFailingValidator[streamInput, streamEvent]{})
 
 	engine.WithHandlers(handler)
 
-	// Empty topic should fail validation
-	capture := rtesting.ServeStream(engine, "POST", "/events", streamInput{Topic: ""})
+	capture := rtesting.ServeStream(engine, "POST", "/events", streamInput{Topic: "test"})
 
 	if capture.Code != http.StatusUnprocessableEntity {
 		t.Errorf("expected status 422, got %d", capture.Code)

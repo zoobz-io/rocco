@@ -28,6 +28,21 @@ func setupSyncMode(t *testing.T) {
 	// Sync mode already configured in TestMain.
 }
 
+// eventsFailingValidator is a test validator that always fails validation.
+type eventsFailingValidator[In, Out any] struct{}
+
+func (eventsFailingValidator[In, Out]) ValidateInput(In) error {
+	return NewValidationError([]ValidationFieldError{
+		{Field: "test", Tag: "required", Value: ""},
+	})
+}
+
+func (eventsFailingValidator[In, Out]) ValidateOutput(Out) error {
+	return NewValidationError([]ValidationFieldError{
+		{Field: "test", Tag: "required", Value: ""},
+	})
+}
+
 func TestEvents_EngineCreated(t *testing.T) {
 	setupSyncMode(t)
 
@@ -413,7 +428,7 @@ func TestEvents_RequestValidationInputFailed(t *testing.T) {
 	defer listener.Close()
 
 	type validatedInput struct {
-		Email string `json:"email" validate:"required,email"`
+		Email string `json:"email"`
 	}
 
 	engine := newTestEngine()
@@ -424,11 +439,10 @@ func TestEvents_RequestValidationInputFailed(t *testing.T) {
 		func(_ *Request[validatedInput]) (testOutput, error) {
 			return testOutput{Message: "ok"}, nil
 		},
-	)
+	).WithValidator(eventsFailingValidator[validatedInput, testOutput]{})
 	engine.WithHandlers(handler)
 
-	// Invalid email
-	body, _ := json.Marshal(map[string]string{"email": "not-an-email"})
+	body, _ := json.Marshal(map[string]string{"email": "test@example.com"})
 	req := httptest.NewRequest("POST", "/validate", bytes.NewBuffer(body))
 	w := httptest.NewRecorder()
 	engine.mux.ServeHTTP(w, req)
@@ -454,7 +468,7 @@ func TestEvents_RequestValidationOutputFailed(t *testing.T) {
 	defer listener.Close()
 
 	type validatedOutput struct {
-		Email string `json:"email" validate:"required,email"`
+		Email string `json:"email"`
 	}
 
 	engine := newTestEngine()
@@ -463,10 +477,10 @@ func TestEvents_RequestValidationOutputFailed(t *testing.T) {
 		"GET",
 		"/output-validate",
 		func(_ *Request[NoBody]) (validatedOutput, error) {
-			// Return invalid email
-			return validatedOutput{Email: "not-an-email"}, nil
+			return validatedOutput{Email: "test@example.com"}, nil
 		},
-	).WithOutputValidation() // Opt-in to output validation for this test
+	).WithValidator(eventsFailingValidator[NoBody, validatedOutput]{}).
+		WithOutputValidation()
 	engine.WithHandlers(handler)
 
 	req := httptest.NewRequest("GET", "/output-validate", nil)

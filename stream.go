@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/zoobzio/capitan"
 	"github.com/zoobzio/sentinel"
 )
@@ -128,7 +127,7 @@ type StreamHandler[In, Out any] struct {
 	errorDefs []ErrorDefinition
 
 	// Validation.
-	validator *validator.Validate
+	validator Validator[In, Out]
 
 	// Middleware.
 	middleware []func(http.Handler) http.Handler
@@ -148,7 +147,7 @@ func (h *StreamHandler[In, Out]) Process(ctx context.Context, r *http.Request, w
 			HandlerNameKey.Field(h.spec.Name),
 			ErrorKey.Field("streaming not supported"),
 		)
-		writeError(ctx, w, ErrInternalServer.WithMessage("streaming not supported"), h.spec.Name)
+		writeError(ctx, w, ErrInternalServer.WithMessage("streaming not supported"), defaultCodec.ContentType(), h.spec.Name)
 		return http.StatusInternalServerError, errors.New("streaming not supported")
 	}
 
@@ -159,7 +158,7 @@ func (h *StreamHandler[In, Out]) Process(ctx context.Context, r *http.Request, w
 			HandlerNameKey.Field(h.spec.Name),
 			ErrorKey.Field(err.Error()),
 		)
-		writeError(ctx, w, ErrUnprocessableEntity.WithMessage("invalid parameters").WithCause(err), h.spec.Name)
+		writeError(ctx, w, ErrUnprocessableEntity.WithMessage("invalid parameters").WithCause(err), defaultCodec.ContentType(), h.spec.Name)
 		return http.StatusUnprocessableEntity, err
 	}
 
@@ -172,7 +171,7 @@ func (h *StreamHandler[In, Out]) Process(ctx context.Context, r *http.Request, w
 				HandlerNameKey.Field(h.spec.Name),
 				ErrorKey.Field(readErr.Error()),
 			)
-			writeError(ctx, w, ErrBadRequest.WithMessage("failed to read request body").WithCause(readErr), h.spec.Name)
+			writeError(ctx, w, ErrBadRequest.WithMessage("failed to read request body").WithCause(readErr), defaultCodec.ContentType(), h.spec.Name)
 			return http.StatusBadRequest, readErr
 		}
 		if err := r.Body.Close(); err != nil {
@@ -188,17 +187,17 @@ func (h *StreamHandler[In, Out]) Process(ctx context.Context, r *http.Request, w
 					HandlerNameKey.Field(h.spec.Name),
 					ErrorKey.Field(unmarshalErr.Error()),
 				)
-				writeError(ctx, w, ErrUnprocessableEntity.WithMessage("invalid request body").WithCause(unmarshalErr), h.spec.Name)
+				writeError(ctx, w, ErrUnprocessableEntity.WithMessage("invalid request body").WithCause(unmarshalErr), defaultCodec.ContentType(), h.spec.Name)
 				return http.StatusUnprocessableEntity, unmarshalErr
 			}
 
 			// Validate input.
-			if inputErr := h.validator.Struct(input); inputErr != nil {
+			if inputErr := h.validator.ValidateInput(input); inputErr != nil {
 				capitan.Warn(ctx, RequestValidationInputFailed,
 					HandlerNameKey.Field(h.spec.Name),
 					ErrorKey.Field(inputErr.Error()),
 				)
-				writeValidationErrorResponse(ctx, w, inputErr, h.spec.Name)
+				writeValidationErrorResponse(ctx, w, inputErr, defaultCodec.ContentType(), h.spec.Name)
 				return http.StatusUnprocessableEntity, inputErr
 			}
 		}
@@ -322,7 +321,7 @@ func NewStreamHandler[In, Out any](name string, method, path string, fn func(*Re
 		},
 		InputMeta:  inputMeta,
 		OutputMeta: outputMeta,
-		validator:  validator.New(),
+		validator:  NoOpValidator[In, Out]{},
 		middleware: make([]func(http.Handler) http.Handler, 0),
 	}
 }
@@ -370,6 +369,12 @@ func (h *StreamHandler[In, Out]) WithErrors(errs ...ErrorDefinition) *StreamHand
 // WithMiddleware adds middleware to this handler.
 func (h *StreamHandler[In, Out]) WithMiddleware(middleware ...func(http.Handler) http.Handler) *StreamHandler[In, Out] {
 	h.middleware = append(h.middleware, middleware...)
+	return h
+}
+
+// WithValidator sets the validator for request validation.
+func (h *StreamHandler[In, Out]) WithValidator(v Validator[In, Out]) *StreamHandler[In, Out] {
+	h.validator = v
 	return h
 }
 

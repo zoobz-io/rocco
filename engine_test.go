@@ -858,7 +858,7 @@ func TestWriteError_EncodeFails(t *testing.T) {
 	w := &failingResponseWriter{}
 
 	// This should not panic - just emit a warning event
-	writeError(ctx, w, ErrBadRequest, "test-handler")
+	writeError(ctx, w, ErrBadRequest, "application/json", "test-handler")
 
 	if w.code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.code)
@@ -926,4 +926,59 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// testCodec is a codec for testing engine-level codec support.
+type testCodec struct {
+	contentType string
+}
+
+func (t testCodec) ContentType() string { return t.contentType }
+func (t testCodec) Marshal(v any) ([]byte, error) { return json.Marshal(v) }
+func (t testCodec) Unmarshal(data []byte, v any) error { return json.Unmarshal(data, v) }
+
+func TestEngine_WithCodec(t *testing.T) {
+	xmlCodec := testCodec{contentType: "application/xml"}
+	engine := newTestEngine().WithCodec(xmlCodec)
+
+	handler := NewHandler[NoBody, struct{ Message string }](
+		"test",
+		"GET",
+		"/test",
+		func(_ *Request[NoBody]) (struct{ Message string }, error) {
+			return struct{ Message string }{Message: "hello"}, nil
+		},
+	)
+
+	engine.WithHandlers(handler)
+
+	// Handler should inherit engine's codec
+	spec := handler.Spec()
+	if spec.ContentType != "application/xml" {
+		t.Errorf("expected content type 'application/xml', got %q", spec.ContentType)
+	}
+}
+
+func TestEngine_WithCodec_HandlerOverride(t *testing.T) {
+	xmlCodec := testCodec{contentType: "application/xml"}
+	yamlCodec := testCodec{contentType: "application/yaml"}
+
+	engine := newTestEngine().WithCodec(xmlCodec)
+
+	handler := NewHandler[NoBody, struct{ Message string }](
+		"test",
+		"GET",
+		"/test",
+		func(_ *Request[NoBody]) (struct{ Message string }, error) {
+			return struct{ Message string }{Message: "hello"}, nil
+		},
+	).WithCodec(yamlCodec) // Explicit override
+
+	engine.WithHandlers(handler)
+
+	// Handler should keep its explicit codec
+	spec := handler.Spec()
+	if spec.ContentType != "application/yaml" {
+		t.Errorf("expected content type 'application/yaml', got %q", spec.ContentType)
+	}
 }

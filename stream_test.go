@@ -21,7 +21,20 @@ type streamEvent struct {
 }
 
 type streamInput struct {
-	Topic string `json:"topic" validate:"required"`
+	Topic string `json:"topic"`
+}
+
+// streamFailingValidator is a test validator that always fails validation.
+type streamFailingValidator[In, Out any] struct{}
+
+func (streamFailingValidator[In, Out]) ValidateInput(In) error {
+	return NewValidationError([]ValidationFieldError{
+		{Field: "topic", Tag: "required", Value: ""},
+	})
+}
+
+func (streamFailingValidator[In, Out]) ValidateOutput(Out) error {
+	return nil
 }
 
 func TestNewStreamHandler(t *testing.T) {
@@ -340,10 +353,9 @@ func TestStreamHandler_Process_ValidationError(t *testing.T) {
 			t.Error("handler should not be called on validation error")
 			return nil
 		},
-	)
+	).WithValidator(streamFailingValidator[streamInput, streamEvent]{})
 
-	// Empty topic should fail validation (required)
-	input := streamInput{Topic: ""}
+	input := streamInput{Topic: "test"}
 	body, _ := json.Marshal(input)
 
 	req := httptest.NewRequest("POST", "/events", bytes.NewReader(body))

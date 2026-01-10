@@ -1,48 +1,45 @@
-.PHONY: test bench lint coverage clean all help check ci
+.PHONY: test test-unit test-integration test-bench lint lint-fix coverage clean all help check ci install-tools install-hooks
 
-# Default target
-all: test lint
+.DEFAULT_GOAL := help
 
-# Display help
+## help: Display available commands
 help:
 	@echo "rocco Development Commands"
 	@echo "========================="
 	@echo ""
-	@echo "Testing & Quality:"
-	@echo "  make test         - Run unit tests with race detector"
-	@echo "  make bench        - Run benchmarks"
-	@echo "  make lint         - Run linters"
-	@echo "  make lint-fix     - Run linters with auto-fix"
-	@echo "  make coverage     - Generate coverage report (HTML)"
-	@echo "  make check        - Run tests and lint (quick check)"
-	@echo "  make ci           - Full CI simulation (all tests + quality checks)"
-	@echo ""
-	@echo "Other:"
-	@echo "  make install-tools- Install required development tools"
-	@echo "  make clean        - Clean generated files"
-	@echo "  make all          - Run tests and lint (default)"
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## //' | column -t -s ':'
 
-# Run tests with race detector
+## test: Run all tests with race detector
 test:
-	@echo "Running tests..."
-	@go test -v -race ./...
+	@echo "Running all tests..."
+	@go test -v -race -timeout=5m ./...
 
-# Run benchmarks
-bench:
+## test-unit: Run unit tests only (short mode)
+test-unit:
+	@echo "Running unit tests..."
+	@go test -v -race -short -timeout=2m ./...
+
+## test-integration: Run integration tests
+test-integration:
+	@echo "Running integration tests..."
+	@go test -v -race -timeout=5m ./testing/integration/...
+
+## test-bench: Run benchmarks
+test-bench:
 	@echo "Running benchmarks..."
-	@go test -bench=. -benchmem -benchtime=100ms -timeout=5m ./...
+	@go test -bench=. -benchmem -benchtime=100ms -timeout=5m ./testing/benchmarks/...
 
-# Run linters
+## lint: Run linters
 lint:
 	@echo "Running linters..."
 	@golangci-lint run --config=.golangci.yml --timeout=5m
 
-# Run linters with auto-fix
+## lint-fix: Run linters with auto-fix
 lint-fix:
 	@echo "Running linters with auto-fix..."
 	@golangci-lint run --config=.golangci.yml --fix
 
-# Generate coverage report
+## coverage: Generate coverage report
 coverage:
 	@echo "Generating coverage report..."
 	@go test -coverprofile=coverage.out $(shell go list ./... | grep -v /cmd/)
@@ -50,7 +47,7 @@ coverage:
 	@go tool cover -func=coverage.out | tail -1
 	@echo "Coverage report generated: coverage.html"
 
-# Clean generated files
+## clean: Remove generated files
 clean:
 	@echo "Cleaning..."
 	@rm -f coverage.out coverage.html
@@ -58,15 +55,25 @@ clean:
 	@find . -name "*.prof" -delete
 	@find . -name "*.out" -delete
 
-# Install development tools
+## install-tools: Install development tools
 install-tools:
 	@echo "Installing development tools..."
 	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.7.2
 
-# Quick check - run tests and lint
+## install-hooks: Install git hooks
+install-hooks:
+	@echo "Installing git hooks..."
+	@echo '#!/bin/sh\nmake check' > .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "Pre-commit hook installed"
+
+## check: Quick validation (test + lint)
 check: test lint
 	@echo "All checks passed!"
 
-# CI simulation - what CI runs locally
+## ci: Full CI simulation
 ci: clean lint test coverage
 	@echo "Full CI simulation complete!"
+
+## all: Run tests and lint (default)
+all: test lint

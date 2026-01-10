@@ -1,6 +1,8 @@
 package rocco
 
 import (
+	"fmt"
+
 	"github.com/zoobzio/sentinel"
 )
 
@@ -173,8 +175,23 @@ type ValidationFieldError struct {
 }
 
 // ValidationDetails provides detailed validation errors for request validation.
+// Implements error interface for use with errors.As().
 type ValidationDetails struct {
 	Fields []ValidationFieldError `json:"fields" description:"List of validation errors"`
+}
+
+// Error implements the error interface.
+func (v ValidationDetails) Error() string {
+	if len(v.Fields) == 0 {
+		return "validation failed"
+	}
+	return fmt.Sprintf("validation failed: %d field(s)", len(v.Fields))
+}
+
+// NewValidationError creates a validation error with field details.
+// Use this when implementing custom validators to return structured validation errors.
+func NewValidationError(fields []ValidationFieldError) error {
+	return ValidationDetails{Fields: fields}
 }
 
 // PayloadTooLargeDetails provides context for payload size errors.

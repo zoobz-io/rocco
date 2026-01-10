@@ -7,25 +7,47 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/zoobzio/rocco.svg)](https://pkg.go.dev/github.com/zoobzio/rocco)
 [![License](https://img.shields.io/github/license/zoobzio/rocco)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/zoobzio/rocco)](go.mod)
-[![Release](https://img.shields.io/github/v/release/zoobzio/rocco)](https://github.com/zoobzio/rocco/releases)
+[![Release](https://img.shields.io/github/v/release/rocco)](https://github.com/zoobzio/rocco/releases)
 
 Type-safe HTTP framework for Go with automatic OpenAPI generation.
 
-## Features
+Define your request and response types, wire up handlers, and get a fully-documented API with validation baked in.
 
-- **Type-Safe Handlers**: Generic handlers with compile-time type checking
-- **Server-Sent Events**: Built-in SSE support for real-time streaming
-- **Automatic OpenAPI**: Generate OpenAPI 3.1.0 specs from your code
-- **Request Validation**: Built-in validation using struct tags
-- **Sentinel Errors**: HTTP error handling with sentinel error pattern
-- **Chi Integration**: Powered by the battle-tested Chi router
-- **Zero Magic**: Explicit configuration, no hidden behaviors
+## Types Become Endpoints
 
-## Installation
+```go
+type CreateUserInput struct {
+    Name  string `json:"name" validate:"required,min=2"`
+    Email string `json:"email" validate:"required,email"`
+}
+
+type UserOutput struct {
+    ID    string `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+handler := rocco.NewHandler[CreateUserInput, UserOutput](
+    "create-user", "POST", "/users",
+    func(req *rocco.Request[CreateUserInput]) (UserOutput, error) {
+        return UserOutput{
+            ID:    "usr_123",
+            Name:  req.Body.Name,
+            Email: req.Body.Email,
+        }, nil
+    },
+).WithErrors(rocco.ErrBadRequest, rocco.ErrConflict)
+```
+
+Your types define the contract. Rocco handles validation, serialization, error responses, and OpenAPI schema generation — all derived from the same source of truth.
+
+## Install
 
 ```bash
 go get github.com/zoobzio/rocco
 ```
+
+Requires Go 1.24+.
 
 ## Quick Start
 
@@ -33,8 +55,9 @@ go get github.com/zoobzio/rocco
 package main
 
 import (
-    "context"
     "fmt"
+
+    "github.com/zoobzio/openapi"
     "github.com/zoobzio/rocco"
 )
 
@@ -50,17 +73,17 @@ type UserOutput struct {
 }
 
 func main() {
-    // Create engine (host, port, identity extractor)
-    // Pass nil for identity extractor if not using authentication
     engine := rocco.NewEngine("", 8080, nil)
 
-    // Register handler
+    // Configure OpenAPI metadata
+    engine.WithOpenAPIInfo(openapi.Info{
+        Title:   "User API",
+        Version: "1.0.0",
+    })
+
     handler := rocco.NewHandler[CreateUserInput, UserOutput](
-        "create-user",
-        "POST",
-        "/users",
+        "create-user", "POST", "/users",
         func(req *rocco.Request[CreateUserInput]) (UserOutput, error) {
-            // Your business logic here
             return UserOutput{
                 ID:    "usr_123",
                 Name:  req.Body.Name,
@@ -69,432 +92,130 @@ func main() {
         },
     ).
         WithSummary("Create a new user").
-        WithDescription("Creates a new user account").
         WithTags("users").
         WithSuccessStatus(201).
         WithErrors(rocco.ErrBadRequest, rocco.ErrUnprocessableEntity)
 
     engine.WithHandlers(handler)
 
-    // Optional: OpenAPI spec endpoint
-    engine.RegisterOpenAPIHandler("/openapi.json", rocco.Info{
-        Title:   "User API",
-        Version: "1.0.0",
-    })
-
-    // Start server
+    // OpenAPI spec at /openapi, interactive docs at /docs
     fmt.Println("Server listening on :8080")
     engine.Start()
 }
 ```
 
-## Core Concepts
+## Capabilities
 
-### Handlers
+| Feature            | Description                                         | Docs                                      |
+| ------------------ | --------------------------------------------------- | ----------------------------------------- |
+| Type-Safe Handlers | Generic handlers with compile-time type checking    | [Handlers](docs/3.guides/1.handlers.md)   |
+| Server-Sent Events | Built-in SSE support for real-time streaming        | [Streaming](docs/3.guides/6.streaming.md) |
+| Automatic OpenAPI  | Generate OpenAPI 3.1.0 specs from your types        | [OpenAPI](docs/3.guides/4.openapi.md)     |
+| Request Validation | Struct tag validation with detailed error responses | [Concepts](docs/2.learn/2.concepts.md)    |
+| Sentinel Errors    | Typed HTTP errors with OpenAPI schema generation    | [Errors](docs/3.guides/2.errors.md)       |
+| Lifecycle Events   | Observable signals for logging, metrics, tracing    | [Events](docs/5.reference/3.events.md)    |
 
-Handlers are type-safe request processors defined with generic input and output types:
+## Why rocco?
 
-```go
-// Handler with body input
-handler := rocco.NewHandler[CreateUserInput, UserOutput](
-    "create-user",
-    "POST",
-    "/users",
-    func(req *rocco.Request[CreateUserInput]) (UserOutput, error) {
-        // Access validated body via req.Body
-        return UserOutput{...}, nil
-    },
-)
+- **Type-safe** — Generic handlers catch errors at compile time, not runtime
+- **Self-documenting** — OpenAPI specs generated from the same types that validate requests
+- **Explicit** — No magic, no hidden behaviors, no struct tag DSLs for routing
+- **Chi-powered** — Built on the battle-tested Chi router with full middleware compatibility
+- **Observable** — Lifecycle events via [capitan](https://github.com/zoobzio/capitan) for metrics and tracing
+- **Streaming-native** — First-class SSE support with typed event streams
 
-// Handler with no body (GET requests)
-handler := rocco.NewHandler[rocco.NoBody, UserListOutput](
-    "list-users",
-    "GET",
-    "/users",
-    func(req *rocco.Request[rocco.NoBody]) (UserListOutput, error) {
-        // Access query params via req.Params.Query
-        return UserListOutput{...}, nil
-    },
-).WithQueryParams("page", "limit")
-```
+## Contract-First by Default
 
-### Streaming (SSE)
+Rocco enables a pattern: **define types once, derive everything else**.
 
-Stream handlers enable real-time server-to-client communication using Server-Sent Events:
+Your request and response structs become the single source of truth. From them, rocco derives validation rules, OpenAPI schemas, error contracts, and documentation.
+
+**Define a type:**
 
 ```go
-type PriceUpdate struct {
-    Symbol string  `json:"symbol"`
-    Price  float64 `json:"price"`
-}
-
-handler := rocco.NewStreamHandler[rocco.NoBody, PriceUpdate](
-    "price-stream",
-    http.MethodGet,
-    "/prices/stream",
-    func(req *rocco.Request[rocco.NoBody], stream rocco.Stream[PriceUpdate]) error {
-        ticker := time.NewTicker(time.Second)
-        defer ticker.Stop()
-
-        for {
-            select {
-            case <-stream.Done():
-                return nil  // Client disconnected
-            case <-ticker.C:
-                if err := stream.Send(PriceUpdate{
-                    Symbol: "BTC",
-                    Price:  getCurrentPrice(),
-                }); err != nil {
-                    return err
-                }
-            }
-        }
-    },
-).WithSummary("Stream price updates")
-```
-
-The `Stream[T]` interface provides:
-- `Send(data T)` - Send data events
-- `SendEvent(event, data)` - Send named events
-- `SendComment(comment)` - Send keep-alive comments
-- `Done()` - Channel closed on client disconnect
-
-### Request Parameters
-
-Access path and query parameters through the `Request.Params` field:
-
-```go
-handler := rocco.NewHandler[rocco.NoBody, UserOutput](
-    "get-user",
-    "GET",
-    "/users/{id}",
-    func(req *rocco.Request[rocco.NoBody]) (UserOutput, error) {
-        userID := req.Params.Path["id"]
-        page := req.Params.Query["page"]
-
-        // Your logic here
-        return UserOutput{...}, nil
-    },
-).
-    WithPathParams("id").
-    WithQueryParams("page", "limit")
-```
-
-### Validation
-
-Validation is automatic using struct tags from `go-playground/validator`:
-
-```go
-type CreateUserInput struct {
-    Name  string `json:"name" validate:"required,min=2,max=50"`
-    Email string `json:"email" validate:"required,email"`
-    Age   int    `json:"age" validate:"required,min=18,max=120"`
-}
-
-// Invalid inputs automatically return 422 with detailed error messages
-```
-
-### Error Handling
-
-Use sentinel errors for HTTP error responses. Errors are typed with generic details for comprehensive OpenAPI generation:
-
-```go
-func(req *rocco.Request[GetUserInput]) (UserOutput, error) {
-    user, err := db.GetUser(req.Params.Path["id"])
-    if err != nil {
-        // Simple sentinel error
-        return UserOutput{}, rocco.ErrNotFound
-
-        // With custom message
-        return UserOutput{}, rocco.ErrNotFound.WithMessage("user not found")
-
-        // With typed details (for OpenAPI schema generation)
-        return UserOutput{}, rocco.ErrNotFound.WithDetails(rocco.NotFoundDetails{
-            Resource: "user",
-        })
-    }
-    return UserOutput{...}, nil
-}
-
-// Must declare errors in handler
-handler.WithErrors(rocco.ErrNotFound)
-```
-
-Available sentinel errors (all with typed details for OpenAPI):
-- `ErrBadRequest` (400) - `BadRequestDetails`
-- `ErrUnauthorized` (401) - `UnauthorizedDetails`
-- `ErrForbidden` (403) - `ForbiddenDetails`
-- `ErrNotFound` (404) - `NotFoundDetails`
-- `ErrConflict` (409) - `ConflictDetails`
-- `ErrPayloadTooLarge` (413) - `PayloadTooLargeDetails`
-- `ErrUnprocessableEntity` (422) - `UnprocessableEntityDetails`
-- `ErrValidationFailed` (422) - `ValidationDetails`
-- `ErrTooManyRequests` (429) - `TooManyRequestsDetails`
-- `ErrInternalServer` (500) - `InternalServerDetails`
-- `ErrNotImplemented` (501) - `NotImplementedDetails`
-- `ErrServiceUnavailable` (503) - `ServiceUnavailableDetails`
-
-**Defining Custom Errors:**
-
-```go
-type TeapotDetails struct {
-    TeaType string `json:"tea_type" description:"The type of tea"`
-}
-
-var ErrTeapot = rocco.NewError[TeapotDetails]("TEAPOT", 418, "I'm a teapot")
-
-// Use in handler
-return Output{}, ErrTeapot.WithDetails(TeapotDetails{TeaType: "Earl Grey"})
-```
-
-**Important**: You must declare errors with `WithErrors()`. Undeclared sentinel errors will return 500 and log an error.
-
-### Middleware
-
-Rocco uses Chi middleware - add any Chi-compatible middleware at the engine or handler level:
-
-```go
-import (
-    "github.com/go-chi/chi/v5/middleware"
-)
-
-engine := rocco.NewEngine("", 8080, nil)
-
-// Engine-level middleware (applies to all handlers)
-engine.WithMiddleware(middleware.Logger)
-engine.WithMiddleware(middleware.Recoverer)
-engine.WithMiddleware(middleware.RequestID)
-
-// Handler-level middleware (applies to specific handler only)
-handler := rocco.NewHandler[CreateUserInput, UserOutput](
-    "create-user",
-    "POST",
-    "/users",
-    func(req *rocco.Request[CreateUserInput]) (UserOutput, error) {
-        return UserOutput{...}, nil
-    },
-).
-    Use(middleware.AllowContentType("application/json")).
-    Use(customAuthMiddleware)
-
-// Register handlers
-engine.WithHandlers(handler)
-```
-
-Middleware execution order: engine middleware runs first, then handler middleware, then the handler function.
-
-### OpenAPI Generation
-
-OpenAPI 3.1.0 specs are automatically generated from your handlers:
-
-```go
-// Register OpenAPI endpoint
-engine.RegisterOpenAPIHandler("/openapi.json", rocco.Info{
-    Title:       "My API",
-    Version:     "1.0.0",
-    Description: "API description",
-})
-
-// Access at http://localhost:8080/openapi.json
-```
-
-The spec includes:
-- Request/response schemas from your types
-- Path parameters
-- Query parameters
-- Request body validation rules
-- Error responses
-- Tags and descriptions
-
-#### OpenAPI Schema Tags
-
-Rocco automatically generates OpenAPI schemas from your types. Use the `validate` tag for runtime validation that also drives OpenAPI constraints, and documentation tags for additional metadata:
-
-```go
-type CreateUserInput struct {
-    Name  string `json:"name" validate:"min=2,max=50" description:"User's full name" example:"John Doe"`
-    Email string `json:"email" validate:"email,min=5,max=100" description:"User email address" example:"user@example.com"`
-    Age   int    `json:"age" validate:"min=18,max=120" description:"User age in years" example:"25"`
-    Role  string `json:"role" validate:"oneof=admin user guest" description:"User role" example:"user"`
-    Tags  []string `json:"tags" validate:"len=5,unique" description:"User tags"`
+type CreateOrderInput struct {
+    CustomerID string  `json:"customer_id" validate:"required,uuid4" description:"Customer UUID"`
+    Items      []Item  `json:"items" validate:"required,min=1" description:"Order line items"`
+    Total      float64 `json:"total" validate:"required,gt=0" description:"Order total in USD"`
 }
 ```
 
-**Validate Tag (Runtime Validation + OpenAPI):**
+**Get an OpenAPI schema:**
 
-The `validate` tag uses [go-playground/validator](https://github.com/go-playground/validator) syntax and automatically generates corresponding OpenAPI constraints:
-
-| Validator | Applies To | OpenAPI Mapping | Example |
-|-----------|------------|-----------------|---------|
-| `min=N` | numbers | `minimum` | `validate:"min=0"` |
-| `max=N` | numbers | `maximum` | `validate:"max=100"` |
-| `min=N` | strings | `minLength` | `validate:"min=3"` |
-| `max=N` | strings | `maxLength` | `validate:"max=50"` |
-| `gte=N` | numbers | `minimum` | `validate:"gte=0"` |
-| `lte=N` | numbers | `maximum` | `validate:"lte=100"` |
-| `gt=N` | numbers | `minimum` + `exclusiveMinimum` | `validate:"gt=0"` |
-| `lt=N` | numbers | `maximum` + `exclusiveMaximum` | `validate:"lt=100"` |
-| `len=N` | arrays | `minItems` + `maxItems` | `validate:"len=5"` |
-| `len=N` | strings | `minLength` + `maxLength` | `validate:"len=10"` |
-| `unique` | arrays | `uniqueItems` | `validate:"unique"` |
-| `email` | strings | `format: "email"` | `validate:"email"` |
-| `url` | strings | `format: "uri"` | `validate:"url"` |
-| `uuid`, `uuid4`, `uuid5` | strings | `format: "uuid"` | `validate:"uuid4"` |
-| `datetime` | strings | `format: "date-time"` | `validate:"datetime"` |
-| `ipv4` | strings | `format: "ipv4"` | `validate:"ipv4"` |
-| `ipv6` | strings | `format: "ipv6"` | `validate:"ipv6"` |
-| `oneof=a b c` | any | `enum: ["a", "b", "c"]` | `validate:"oneof=red green blue"` |
-
-**Documentation Tags:**
-
-| Tag | Description | Example |
-|-----|-------------|---------|
-| `description` | Field description for OpenAPI | `description:"User's full name"` |
-| `example` | Example value (type-aware) | `example:"John Doe"` |
-
-**Benefits:**
-- **Single source of truth**: One tag for both validation and documentation
-- **Runtime enforcement**: Constraints are validated at runtime
-- **Automatic OpenAPI sync**: Documentation always matches validation rules
-- **Standard Go practices**: Uses the industry-standard validator library
-
-**Examples are type-aware:**
-- String fields: `example:"hello"` → `"hello"`
-- Integer fields: `example:"42"` → `42`
-- Number fields: `example:"3.14"` → `3.14`
-- Boolean fields: `example:"true"` → `true`
-- Array fields: `example:"a,b,c"` → `["a", "b", "c"]`
-
-### Observability
-
-Rocco emits lifecycle events via [capitan](https://github.com/zoobzio/capitan), a type-safe event coordination library. Users control observability by hooking events and wiring them to their preferred backends (OpenTelemetry, Prometheus, logging, etc.).
-
-**Hook events for logging:**
-```go
-import "github.com/zoobzio/capitan"
-
-capitan.Hook(rocco.RequestReceived, func(ctx context.Context, e *capitan.Event) {
-    method, _ := rocco.MethodKey.From(e)
-    path, _ := rocco.PathKey.From(e)
-    log.Printf("Request: %s %s", method, path)
-})
+```yaml
+CreateOrderInput:
+  type: object
+  required: [customer_id, items, total]
+  properties:
+    customer_id:
+      type: string
+      format: uuid
+      description: Customer UUID
+    items:
+      type: array
+      minItems: 1
+      description: Order line items
+      items:
+        $ref: '#/components/schemas/Item'
+    total:
+      type: number
+      exclusiveMinimum: 0
+      description: Order total in USD
 ```
 
-**Observe all events (metrics, tracing, etc.):**
-```go
-capitan.Observe(func(ctx context.Context, e *capitan.Event) {
-    // Wire to your observability backend
-    // (OpenTelemetry, Prometheus, DataDog, etc.)
-})
-```
+**Get consistent validation errors:**
 
-**Available Events:**
-
-| Signal | Description | Fields |
-|--------|-------------|--------|
-| `EngineCreated` (`http.engine.created`) | Engine instance created | `host`, `port` |
-| `EngineStarting` (`http.engine.starting`) | Server starting to listen | `host`, `port`, `address` |
-| `EngineShutdownStarted` (`http.engine.shutdown.started`) | Shutdown initiated | - |
-| `EngineShutdownComplete` (`http.engine.shutdown.complete`) | Shutdown finished | `graceful`, `error` (if failed) |
-| `HandlerRegistered` (`http.handler.registered`) | Handler registered with engine | `handler_name`, `method`, `path` |
-| `RequestReceived` (`http.request.received`) | Request received | `method`, `path`, `handler_name` |
-| `RequestCompleted` (`http.request.completed`) | Request succeeded | `method`, `path`, `handler_name`, `status_code`, `duration_ms` |
-| `RequestFailed` (`http.request.failed`) | Request failed | `method`, `path`, `handler_name`, `status_code`, `duration_ms`, `error` |
-| `HandlerExecuting` (`http.handler.executing`) | Handler function starting | `handler_name` |
-| `HandlerSuccess` (`http.handler.success`) | Handler returned successfully | `handler_name`, `status_code` |
-| `HandlerError` (`http.handler.error`) | Handler returned error | `handler_name`, `error` |
-| `HandlerSentinelError` (`http.handler.sentinel.error`) | Declared sentinel error returned | `handler_name`, `error`, `status_code` |
-| `HandlerUndeclaredSentinel` (`http.handler.sentinel.undeclared`) | Undeclared sentinel error (bug) | `handler_name`, `error`, `status_code` |
-| `RequestParamsInvalid` (`http.request.params.invalid`) | Path/query param extraction failed | `handler_name`, `error` |
-| `RequestBodyReadError` (`http.request.body.read.error`) | Failed to read request body | `handler_name`, `error` |
-| `RequestBodyParseError` (`http.request.body.parse.error`) | Failed to parse JSON body | `handler_name`, `error` |
-| `RequestValidationInputFailed` (`http.request.validation.input.failed`) | Input validation failed | `handler_name`, `error` |
-| `RequestValidationOutputFailed` (`http.request.validation.output.failed`) | Output validation failed | `handler_name`, `error` |
-| `RequestResponseMarshalError` (`http.request.response.marshal.error`) | Failed to marshal response | `handler_name`, `error` |
-
-**Field Keys:**
-- `HostKey` (string) - Server host
-- `PortKey` (int) - Server port
-- `AddressKey` (string) - Server address (host:port)
-- `MethodKey` (string) - HTTP method
-- `PathKey` (string) - Request path
-- `HandlerNameKey` (string) - Handler identifier
-- `StatusCodeKey` (int) - HTTP status code
-- `DurationMsKey` (int64) - Request duration in milliseconds
-- `ErrorKey` (string) - Error message
-- `GracefulKey` (bool) - Graceful shutdown success
-
-All events and keys are exported constants in the `rocco` package for type-safe access.
-
-### Configuration
-
-Create an engine with host, port, and identity extractor:
-
-```go
-// Basic engine on all interfaces, port 8080, no auth
-engine := rocco.NewEngine("", 8080, nil)
-
-// Engine on specific host/port with auth
-engine := rocco.NewEngine("0.0.0.0", 3000, extractIdentity)
-```
-
-The engine uses these default timeouts:
-- ReadTimeout: 120 seconds
-- WriteTimeout: 120 seconds
-- IdleTimeout: 120 seconds
-
-### Graceful Shutdown
-
-```go
-// Handle shutdown signals
-sigChan := make(chan os.Signal, 1)
-signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-go func() {
-    engine.Start()
-}()
-
-<-sigChan
-ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-defer cancel()
-
-if err := engine.Shutdown(ctx); err != nil {
-    log.Fatal(err)
+```json
+{
+  "code": "VALIDATION_FAILED",
+  "message": "validation failed",
+  "details": {
+    "fields": [
+      {"field": "customer_id", "message": "must be a valid UUID"},
+      {"field": "total", "message": "must be greater than 0"}
+    ]
+  }
 }
 ```
 
-## Development
+No separate schema files. No manual sync between code and docs. The types ARE the contract.
 
-```bash
-# Run tests
-make test
+## Documentation
 
-# Run linters
-make lint
+- [Overview](docs/1.overview.md) — Design philosophy and architecture
 
-# Generate coverage report
-make coverage
+### Learn
 
-# Run all checks (CI simulation)
-make ci
-```
+- [Quickstart](docs/2.learn/1.quickstart.md) — Get started in minutes
+- [Concepts](docs/2.learn/2.concepts.md) — Handlers, requests, validation, errors
+- [Architecture](docs/2.learn/3.architecture.md) — Internal design and components
 
-## Architecture
+### Guides
 
-Rocco is built on:
-- [chi](https://github.com/go-chi/chi) - HTTP router
-- [sentinel](https://github.com/zoobzio/sentinel) - Type metadata extraction
-- [validator](https://github.com/go-playground/validator) - Struct validation
-- [capitan](https://github.com/zoobzio/capitan) - Event coordination
+- [Handlers](docs/3.guides/1.handlers.md) — Request/response handlers and streaming
+- [Errors](docs/3.guides/2.errors.md) — Sentinel errors and custom error types
+- [Authentication](docs/3.guides/3.authentication.md) — Identity extraction and middleware
+- [OpenAPI](docs/3.guides/4.openapi.md) — Schema generation and customization
+- [Best Practices](docs/3.guides/5.best-practices.md) — Patterns and recommendations
+- [Streaming](docs/3.guides/6.streaming.md) — Server-Sent Events
+
+### Cookbook
+
+- [CRUD API](docs/4.cookbook/1.crud-api.md) — Complete REST API example
+- [Authentication](docs/4.cookbook/2.authentication.md) — JWT and session patterns
+- [Observability](docs/4.cookbook/3.observability.md) — Logging, metrics, tracing
+- [Realtime](docs/4.cookbook/4.realtime.md) — SSE patterns and use cases
+
+### Reference
+
+- [API](docs/5.reference/1.api.md) — Complete function documentation
+- [Errors](docs/5.reference/2.errors.md) — All sentinel errors and detail types
+- [Events](docs/5.reference/3.events.md) — Lifecycle signals and field keys
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## Security
-
-See [SECURITY.md](SECURITY.md) for security policy and reporting vulnerabilities.
-
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE) for details.

@@ -23,6 +23,7 @@ type HandlerSpec struct {
 	OutputTypeName string   `json:"outputTypeName" yaml:"outputTypeName"`
 	SuccessStatus  int      `json:"successStatus" yaml:"successStatus"`
 	ErrorCodes     []int    `json:"errorCodes,omitempty" yaml:"errorCodes,omitempty"`
+	ContentType    string   `json:"contentType,omitempty" yaml:"contentType,omitempty"` // MIME type for request/response bodies
 
 	// Authentication & Authorization
 	RequiresAuth bool       `json:"requiresAuth" yaml:"requiresAuth"`

@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/zoobzio/capitan"
 	"github.com/zoobzio/sentinel"
 )
@@ -33,6 +32,8 @@ type Handler[In, Out any] struct {
 	responseHeaders map[string]string // Default response headers.
 	maxBodySize     int64             // Maximum request body size in bytes (0 = unlimited, default: 10MB).
 	validateOutput  bool              // Whether to validate output structs (disabled by default).
+	codec           Codec             // Codec for request/response serialization.
+	codecExplicit   bool              // True if codec was explicitly set via WithCodec.
 
 	// Type metadata from sentinel.
 	InputMeta  sentinel.Metadata
@@ -42,7 +43,7 @@ type Handler[In, Out any] struct {
 	errorDefs []ErrorDefinition
 
 	// Validation.
-	validator *validator.Validate
+	validator Validator[In, Out]
 
 	// Middleware.
 	middleware []func(http.Handler) http.Handler
@@ -62,7 +63,7 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 			HandlerNameKey.Field(h.spec.Name),
 			ErrorKey.Field(err.Error()),
 		)
-		writeError(ctx, w, ErrUnprocessableEntity.WithMessage("invalid parameters").WithCause(err), h.spec.Name)
+		writeError(ctx, w, ErrUnprocessableEntity.WithMessage("invalid parameters").WithCause(err), h.spec.ContentType, h.spec.Name)
 		return http.StatusUnprocessableEntity, err
 	}
 
@@ -85,14 +86,14 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 				)
 				writeError(ctx, w, ErrPayloadTooLarge.WithDetails(PayloadTooLargeDetails{
 					MaxSize: h.maxBodySize,
-				}), h.spec.Name)
+				}), h.spec.ContentType, h.spec.Name)
 				return http.StatusRequestEntityTooLarge, readErr
 			}
 			capitan.Error(ctx, RequestBodyReadError,
 				HandlerNameKey.Field(h.spec.Name),
 				ErrorKey.Field(readErr.Error()),
 			)
-			writeError(ctx, w, ErrBadRequest.WithMessage("failed to read request body").WithCause(readErr), h.spec.Name)
+			writeError(ctx, w, ErrBadRequest.WithMessage("failed to read request body").WithCause(readErr), h.spec.ContentType, h.spec.Name)
 			return http.StatusBadRequest, readErr
 		}
 		if closeErr := r.Body.Close(); closeErr != nil {
@@ -103,22 +104,22 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 		}
 
 		if len(body) > 0 {
-			if unmarshalErr := json.Unmarshal(body, &input); unmarshalErr != nil {
+			if unmarshalErr := h.codec.Unmarshal(body, &input); unmarshalErr != nil {
 				capitan.Error(ctx, RequestBodyParseError,
 					HandlerNameKey.Field(h.spec.Name),
 					ErrorKey.Field(unmarshalErr.Error()),
 				)
-				writeError(ctx, w, ErrUnprocessableEntity.WithMessage("invalid request body").WithCause(unmarshalErr), h.spec.Name)
+				writeError(ctx, w, ErrUnprocessableEntity.WithMessage("invalid request body").WithCause(unmarshalErr), h.spec.ContentType, h.spec.Name)
 				return http.StatusUnprocessableEntity, unmarshalErr
 			}
 
 			// Validate input.
-			if inputErr := h.validator.Struct(input); inputErr != nil {
+			if inputErr := h.validator.ValidateInput(input); inputErr != nil {
 				capitan.Warn(ctx, RequestValidationInputFailed,
 					HandlerNameKey.Field(h.spec.Name),
 					ErrorKey.Field(inputErr.Error()),
 				)
-				writeValidationErrorResponse(ctx, w, inputErr, h.spec.Name)
+				writeValidationErrorResponse(ctx, w, inputErr, h.spec.ContentType, h.spec.Name)
 				return http.StatusUnprocessableEntity, inputErr
 			}
 		}
@@ -154,7 +155,7 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 					ErrorKey.Field(err.Error()),
 					StatusCodeKey.Field(e.Status()),
 				)
-				writeError(ctx, w, ErrInternalServer, h.spec.Name)
+				writeError(ctx, w, ErrInternalServer, h.spec.ContentType, h.spec.Name)
 				return http.StatusInternalServerError, fmt.Errorf("undeclared error %s (add to WithErrors)", e.Code())
 			}
 
@@ -164,7 +165,7 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 				ErrorKey.Field(err.Error()),
 				StatusCodeKey.Field(e.Status()),
 			)
-			writeError(ctx, w, e, h.spec.Name)
+			writeError(ctx, w, e, h.spec.ContentType, h.spec.Name)
 			return e.Status(), nil
 		}
 
@@ -173,30 +174,30 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 			HandlerNameKey.Field(h.spec.Name),
 			ErrorKey.Field(err.Error()),
 		)
-		writeError(ctx, w, ErrInternalServer, h.spec.Name)
+		writeError(ctx, w, ErrInternalServer, h.spec.ContentType, h.spec.Name)
 		return http.StatusInternalServerError, err
 	}
 
 	// Validate output (opt-in, disabled by default).
 	if h.validateOutput {
-		if validErr := h.validator.Struct(output); validErr != nil {
+		if validErr := h.validator.ValidateOutput(output); validErr != nil {
 			capitan.Warn(ctx, RequestValidationOutputFailed,
 				HandlerNameKey.Field(h.spec.Name),
 				ErrorKey.Field(validErr.Error()),
 			)
-			writeError(ctx, w, ErrInternalServer.WithCause(fmt.Errorf("output validation failed: %w", validErr)), h.spec.Name)
+			writeError(ctx, w, ErrInternalServer.WithCause(fmt.Errorf("output validation failed: %w", validErr)), h.spec.ContentType, h.spec.Name)
 			return http.StatusInternalServerError, fmt.Errorf("output validation failed: %w", validErr)
 		}
 	}
 
 	// Marshal response.
-	body, err := json.Marshal(output)
+	body, err := h.codec.Marshal(output)
 	if err != nil {
 		capitan.Error(ctx, RequestResponseMarshalError,
 			HandlerNameKey.Field(h.spec.Name),
 			ErrorKey.Field(err.Error()),
 		)
-		writeError(ctx, w, ErrInternalServer.WithCause(err), h.spec.Name)
+		writeError(ctx, w, ErrInternalServer.WithCause(err), h.spec.ContentType, h.spec.Name)
 		return http.StatusInternalServerError, err
 	}
 
@@ -204,7 +205,7 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 	for key, value := range h.responseHeaders {
 		w.Header().Set(key, value)
 	}
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", h.spec.ContentType)
 
 	// Write status and body.
 	w.WriteHeader(h.spec.SuccessStatus)
@@ -251,6 +252,7 @@ func NewHandler[In, Out any](name string, method, path string, fn func(*Request[
 			OutputTypeName: outputMeta.TypeName,
 			SuccessStatus:  http.StatusOK, // Default to 200.
 			ErrorCodes:     []int{},
+			ContentType:    defaultCodec.ContentType(),
 			RequiresAuth:   false,
 			ScopeGroups:    [][]string{},
 			RoleGroups:     [][]string{},
@@ -259,9 +261,10 @@ func NewHandler[In, Out any](name string, method, path string, fn func(*Request[
 		},
 		responseHeaders: make(map[string]string),
 		maxBodySize:     10 * 1024 * 1024, // Default to 10MB.
+		codec:           defaultCodec,
 		InputMeta:       inputMeta,
 		OutputMeta:      outputMeta,
-		validator:       validator.New(),
+		validator:       NoOpValidator[In, Out]{},
 		middleware:      make([]func(http.Handler) http.Handler, 0),
 	}
 }
@@ -338,6 +341,30 @@ func (h *Handler[In, Out]) WithMaxBodySize(size int64) *Handler[In, Out] {
 // Output validation failures return 500 Internal Server Error.
 func (h *Handler[In, Out]) WithOutputValidation() *Handler[In, Out] {
 	h.validateOutput = true
+	return h
+}
+
+// WithCodec sets the codec for request/response serialization.
+// This overrides the engine's default codec for this handler.
+func (h *Handler[In, Out]) WithCodec(codec Codec) *Handler[In, Out] {
+	h.codec = codec
+	h.spec.ContentType = codec.ContentType()
+	h.codecExplicit = true
+	return h
+}
+
+// applyDefaultCodec sets the codec if one wasn't explicitly set via WithCodec.
+// Called by Engine when registering handlers.
+func (h *Handler[In, Out]) applyDefaultCodec(codec Codec) {
+	if !h.codecExplicit {
+		h.codec = codec
+		h.spec.ContentType = codec.ContentType()
+	}
+}
+
+// WithValidator sets the validator for request/response validation.
+func (h *Handler[In, Out]) WithValidator(v Validator[In, Out]) *Handler[In, Out] {
+	h.validator = v
 	return h
 }
 
@@ -424,9 +451,11 @@ func (h *Handler[In, Out]) isErrorDeclared(err ErrorDefinition) bool {
 	return false
 }
 
-// writeError writes a structured JSON error response.
-func writeError(ctx context.Context, w http.ResponseWriter, err ErrorDefinition, handlerName string) {
-	w.Header().Set("Content-Type", "application/json")
+// writeError writes a structured error response using the specified content type.
+// Error responses are always JSON-encoded regardless of handler codec, as error
+// schemas are defined in JSON format in OpenAPI.
+func writeError(ctx context.Context, w http.ResponseWriter, err ErrorDefinition, contentType, handlerName string) {
+	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(err.Status())
 
 	if encodeErr := json.NewEncoder(w).Encode(errorResponse{
@@ -442,21 +471,14 @@ func writeError(ctx context.Context, w http.ResponseWriter, err ErrorDefinition,
 }
 
 // writeValidationErrorResponse writes detailed validation errors using the standard error format.
-func writeValidationErrorResponse(ctx context.Context, w http.ResponseWriter, err error, handlerName string) {
-	// Extract validation errors.
-	var validationErrors []ValidationFieldError
-	var ve validator.ValidationErrors
-	if errors.As(err, &ve) {
-		for _, fe := range ve {
-			validationErrors = append(validationErrors, ValidationFieldError{
-				Field: fe.Field(),
-				Tag:   fe.Tag(),
-				Value: fmt.Sprintf("%v", fe.Value()),
-			})
-		}
+func writeValidationErrorResponse(ctx context.Context, w http.ResponseWriter, err error, contentType, handlerName string) {
+	// Extract validation details if available.
+	var details ValidationDetails
+	if errors.As(err, &details) {
+		writeError(ctx, w, ErrValidationFailed.WithDetails(details), contentType, handlerName)
+		return
 	}
 
-	writeError(ctx, w, ErrValidationFailed.WithDetails(ValidationDetails{
-		Fields: validationErrors,
-	}), handlerName)
+	// Fallback to generic validation error with message.
+	writeError(ctx, w, ErrValidationFailed.WithMessage(err.Error()), contentType, handlerName)
 }
