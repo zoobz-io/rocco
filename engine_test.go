@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -980,5 +981,156 @@ func TestEngine_WithCodec_HandlerOverride(t *testing.T) {
 	spec := handler.Spec()
 	if spec.ContentType != "application/yaml" {
 		t.Errorf("expected content type 'application/yaml', got %q", spec.ContentType)
+	}
+}
+
+// Tests for authorization middleware edge cases - identity not in context
+
+func TestEngine_AuthorizationMiddleware_NoIdentityInContext(t *testing.T) {
+	// Create a handler with scope requirements but bypass auth middleware
+	// by directly invoking authorization middleware with empty context.
+	engine := NewEngine("localhost", 8080, nil)
+
+	handler := NewHandler[NoBody, testOutput](
+		"scoped",
+		"GET",
+		"/scoped",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{Message: "OK"}, nil
+		},
+	).WithScopes("admin")
+
+	// Build authorization middleware directly
+	authzMiddleware := engine.buildAuthorizationMiddleware(handler)
+
+	// Wrap a simple handler
+	innerHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrappedHandler := authzMiddleware(innerHandler)
+
+	// Call with empty context (no identity)
+	req := httptest.NewRequest("GET", "/scoped", nil)
+	w := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected status 403, got %d", w.Code)
+	}
+
+	// Verify error message
+	if !strings.Contains(w.Body.String(), "identity not found") {
+		t.Errorf("expected 'identity not found' in response, got %q", w.Body.String())
+	}
+}
+
+func TestEngine_AuthorizationMiddleware_InvalidIdentityType(t *testing.T) {
+	engine := NewEngine("localhost", 8080, nil)
+
+	handler := NewHandler[NoBody, testOutput](
+		"scoped",
+		"GET",
+		"/scoped",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{Message: "OK"}, nil
+		},
+	).WithScopes("admin")
+
+	authzMiddleware := engine.buildAuthorizationMiddleware(handler)
+
+	innerHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrappedHandler := authzMiddleware(innerHandler)
+
+	// Call with wrong type in context
+	req := httptest.NewRequest("GET", "/scoped", nil)
+	ctx := context.WithValue(req.Context(), identityContextKey, "not an identity")
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected status 403, got %d", w.Code)
+	}
+
+	if !strings.Contains(w.Body.String(), "invalid identity") {
+		t.Errorf("expected 'invalid identity' in response, got %q", w.Body.String())
+	}
+}
+
+// Tests for usage limit middleware edge cases
+
+func TestEngine_UsageLimitMiddleware_NoIdentityInContext(t *testing.T) {
+	engine := NewEngine("localhost", 8080, nil)
+
+	handler := NewHandler[NoBody, testOutput](
+		"limited",
+		"GET",
+		"/limited",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{Message: "OK"}, nil
+		},
+	).WithUsageLimit("requests", func(_ Identity) int { return 100 })
+
+	usageLimitMiddleware := engine.buildUsageLimitMiddleware(handler)
+
+	innerHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrappedHandler := usageLimitMiddleware(innerHandler)
+
+	// Call with empty context (no identity)
+	req := httptest.NewRequest("GET", "/limited", nil)
+	w := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected status 403, got %d", w.Code)
+	}
+
+	if !strings.Contains(w.Body.String(), "identity not found") {
+		t.Errorf("expected 'identity not found' in response, got %q", w.Body.String())
+	}
+}
+
+func TestEngine_UsageLimitMiddleware_InvalidIdentityType(t *testing.T) {
+	engine := NewEngine("localhost", 8080, nil)
+
+	handler := NewHandler[NoBody, testOutput](
+		"limited",
+		"GET",
+		"/limited",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{Message: "OK"}, nil
+		},
+	).WithUsageLimit("requests", func(_ Identity) int { return 100 })
+
+	usageLimitMiddleware := engine.buildUsageLimitMiddleware(handler)
+
+	innerHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrappedHandler := usageLimitMiddleware(innerHandler)
+
+	// Call with wrong type in context
+	req := httptest.NewRequest("GET", "/limited", nil)
+	ctx := context.WithValue(req.Context(), identityContextKey, 12345) // int, not Identity
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected status 403, got %d", w.Code)
+	}
+
+	if !strings.Contains(w.Body.String(), "invalid identity") {
+		t.Errorf("expected 'invalid identity' in response, got %q", w.Body.String())
 	}
 }

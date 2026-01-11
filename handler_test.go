@@ -28,6 +28,18 @@ func (failingValidator[In, Out]) ValidateOutput(Out) error {
 	})
 }
 
+// plainErrorValidator returns a plain error without ValidationDetails.
+// Used to test the fallback path in writeValidationErrorResponse.
+type plainErrorValidator[In, Out any] struct{}
+
+func (plainErrorValidator[In, Out]) ValidateInput(In) error {
+	return errors.New("plain validation error")
+}
+
+func (plainErrorValidator[In, Out]) ValidateOutput(Out) error {
+	return errors.New("plain output validation error")
+}
+
 // errorReader is a reader that always returns an error
 type errorReader struct{}
 
@@ -1034,5 +1046,41 @@ func TestHandler_ApplyDefaultCodec_DoesNotOverrideExplicit(t *testing.T) {
 	spec := handler.Spec()
 	if spec.ContentType != "application/xml" {
 		t.Errorf("expected content type 'application/xml' (explicit), got %q", spec.ContentType)
+	}
+}
+
+func TestHandler_ValidationError_FallbackPath(t *testing.T) {
+	// Test that plain errors (without ValidationDetails) are handled correctly.
+	handler := NewHandler[testInput, testOutput](
+		"test",
+		"POST",
+		"/test",
+		func(_ *Request[testInput]) (testOutput, error) {
+			return testOutput{Message: "OK"}, nil
+		},
+	).WithValidator(plainErrorValidator[testInput, testOutput]{}).
+		WithErrors(ErrValidationFailed)
+
+	body := `{"name":"test","count":1}`
+	req := httptest.NewRequest("POST", "/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	_, err := handler.Process(context.Background(), req, w)
+
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected status 422, got %d", w.Code)
+	}
+
+	// Verify the response contains the plain error message
+	var resp map[string]any
+	if jsonErr := json.Unmarshal(w.Body.Bytes(), &resp); jsonErr != nil {
+		t.Fatalf("failed to unmarshal response: %v", jsonErr)
+	}
+	if resp["message"] != "plain validation error" {
+		t.Errorf("expected message 'plain validation error', got %q", resp["message"])
 	}
 }
