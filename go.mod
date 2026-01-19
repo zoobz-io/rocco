@@ -1,8 +1,8 @@
 module github.com/zoobzio/rocco
 
-go 1.24.5
+go 1.24
 
-toolchain go1.25.4
+toolchain go1.25.5
 
 require (
 	github.com/zoobzio/capitan v1.0.0

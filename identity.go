@@ -10,6 +10,16 @@ type Identity interface {
 	// Return empty string if not applicable.
 	TenantID() string
 
+	// Email returns the email address associated with this identity.
+	// Return empty string if not available.
+	Email() string
+
+	// Scopes returns all scopes/permissions granted to this identity.
+	Scopes() []string
+
+	// Roles returns all roles assigned to this identity.
+	Roles() []string
+
 	// HasScope checks if this identity has the given scope/permission.
 	HasScope(scope string) bool
 
@@ -34,6 +44,21 @@ func (NoIdentity) ID() string {
 // TenantID implements Identity.
 func (NoIdentity) TenantID() string {
 	return ""
+}
+
+// Email implements Identity.
+func (NoIdentity) Email() string {
+	return ""
+}
+
+// Scopes implements Identity.
+func (NoIdentity) Scopes() []string {
+	return nil
+}
+
+// Roles implements Identity.
+func (NoIdentity) Roles() []string {
+	return nil
 }
 
 // HasScope implements Identity.
