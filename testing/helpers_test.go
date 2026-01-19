@@ -110,6 +110,7 @@ func TestRequestBuilder_WithContext(t *testing.T) {
 func TestMockIdentity(t *testing.T) {
 	identity := NewMockIdentity("user-123").
 		WithTenantID("tenant-456").
+		WithEmail("user@example.com").
 		WithScopes("read", "write").
 		WithRoles("admin", "user").
 		WithStat("requests", 100)
@@ -119,6 +120,9 @@ func TestMockIdentity(t *testing.T) {
 	}
 	if identity.TenantID() != "tenant-456" {
 		t.Errorf("expected TenantID 'tenant-456', got %q", identity.TenantID())
+	}
+	if identity.Email() != "user@example.com" {
+		t.Errorf("expected Email 'user@example.com', got %q", identity.Email())
 	}
 
 	if !identity.HasScope("read") {

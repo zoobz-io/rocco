@@ -402,6 +402,7 @@ type testIdentity struct {
 
 func (t *testIdentity) ID() string            { return t.id }
 func (t *testIdentity) TenantID() string      { return t.tenantID }
+func (t *testIdentity) Email() string         { return "" }
 func (t *testIdentity) Scopes() []string      { return t.scopes }
 func (t *testIdentity) Roles() []string       { return t.roles }
 func (t *testIdentity) Stats() map[string]int { return nil }

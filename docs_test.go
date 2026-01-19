@@ -1121,6 +1121,9 @@ type mockIdentity struct {
 
 func (m *mockIdentity) ID() string            { return "test-id" }
 func (m *mockIdentity) TenantID() string      { return "test-tenant" }
+func (m *mockIdentity) Email() string         { return "" }
+func (m *mockIdentity) Scopes() []string      { return m.scopes }
+func (m *mockIdentity) Roles() []string       { return m.roles }
 func (m *mockIdentity) Stats() map[string]int { return nil }
 func (m *mockIdentity) HasScope(scope string) bool {
 	for _, s := range m.scopes {

@@ -151,6 +151,7 @@ func ServeRequestWithHeaders(engine *rocco.Engine, method, path string, body any
 type MockIdentity struct {
 	id       string
 	tenantID string
+	email    string
 	scopes   []string
 	roles    []string
 	stats    map[string]int
@@ -171,6 +172,9 @@ func (m *MockIdentity) ID() string { return m.id }
 
 // TenantID returns the tenant ID.
 func (m *MockIdentity) TenantID() string { return m.tenantID }
+
+// Email returns the identity email.
+func (m *MockIdentity) Email() string { return m.email }
 
 // Scopes returns the identity scopes.
 func (m *MockIdentity) Scopes() []string { return m.scopes }
@@ -204,6 +208,12 @@ func (m *MockIdentity) HasRole(role string) bool {
 // WithTenantID sets the tenant ID.
 func (m *MockIdentity) WithTenantID(tenantID string) *MockIdentity {
 	m.tenantID = tenantID
+	return m
+}
+
+// WithEmail sets the email.
+func (m *MockIdentity) WithEmail(email string) *MockIdentity {
+	m.email = email
 	return m
 }
 

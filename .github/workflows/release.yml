@@ -80,10 +80,35 @@ jobs:
           path: .dist/
           retention-days: 7
 
+  # Tag submodules with the same version
+  tag-submodules:
+    name: Tag Submodules
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get release version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Tag auth0 submodule
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          # Check if tag already exists on remote (--exit-code returns 2 if not found)
+          if git ls-remote --exit-code --tags origin "refs/tags/auth0/${VERSION}" >/dev/null 2>&1; then
+            echo "Tag auth0/${VERSION} already exists, skipping"
+          else
+            git tag "auth0/${VERSION}"
+            git push origin "auth0/${VERSION}"
+          fi
+
   # Verify release creation
   verify:
     name: Verify Release
-    needs: release
+    needs: [release, tag-submodules]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

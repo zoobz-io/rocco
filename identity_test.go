@@ -457,6 +457,24 @@ func TestNoIdentity(t *testing.T) {
 		}
 	})
 
+	t.Run("Email returns empty string", func(t *testing.T) {
+		if identity.Email() != "" {
+			t.Errorf("expected empty string, got %q", identity.Email())
+		}
+	})
+
+	t.Run("Scopes returns nil", func(t *testing.T) {
+		if identity.Scopes() != nil {
+			t.Errorf("expected nil, got %v", identity.Scopes())
+		}
+	})
+
+	t.Run("Roles returns nil", func(t *testing.T) {
+		if identity.Roles() != nil {
+			t.Errorf("expected nil, got %v", identity.Roles())
+		}
+	})
+
 	t.Run("HasScope always returns false", func(t *testing.T) {
 		if identity.HasScope("read") {
 			t.Error("expected false for HasScope")
@@ -499,6 +517,9 @@ type testIdentity struct {
 
 func (i *testIdentity) ID() string       { return i.id }
 func (i *testIdentity) TenantID() string { return i.tenantID }
+func (i *testIdentity) Email() string    { return "" }
+func (i *testIdentity) Scopes() []string { return i.scopes }
+func (i *testIdentity) Roles() []string  { return i.roles }
 
 func (i *testIdentity) HasScope(scope string) bool {
 	for _, s := range i.scopes {
