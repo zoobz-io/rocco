@@ -11,33 +11,43 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/zoobzio/check"
 )
 
-// failingValidator is a test validator that always fails validation.
-type failingValidator[In, Out any] struct{}
-
-func (failingValidator[In, Out]) ValidateInput(In) error {
-	return NewValidationError([]ValidationFieldError{
-		{Field: "test", Tag: "required", Value: ""},
-	})
+// failingValidatableInput implements Validatable and always fails using check.
+type failingValidatableInput struct {
+	Email string `json:"email"`
+	Age   int    `json:"age"`
 }
 
-func (failingValidator[In, Out]) ValidateOutput(Out) error {
-	return NewValidationError([]ValidationFieldError{
-		{Field: "test", Tag: "required", Value: ""},
-	})
+func (f failingValidatableInput) Validate() error {
+	// Use check.All to return a *check.Result that always fails
+	return check.All(
+		check.Required("", "test"), // Empty string always fails required
+	)
 }
 
-// plainErrorValidator returns a plain error without ValidationDetails.
+// failingValidatableOutput implements Validatable and always fails using check.
+type failingValidatableOutput struct {
+	Email string `json:"email"`
+}
+
+func (f failingValidatableOutput) Validate() error {
+	return check.All(
+		check.Required("", "test"), // Empty string always fails required
+	)
+}
+
+// plainErrorValidatableInput implements Validatable and returns a plain error.
 // Used to test the fallback path in writeValidationErrorResponse.
-type plainErrorValidator[In, Out any] struct{}
-
-func (plainErrorValidator[In, Out]) ValidateInput(In) error {
-	return errors.New("plain validation error")
+type plainErrorValidatableInput struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
 }
 
-func (plainErrorValidator[In, Out]) ValidateOutput(Out) error {
-	return errors.New("plain output validation error")
+func (plainErrorValidatableInput) Validate() error {
+	return errors.New("plain validation error")
 }
 
 // errorReader is a reader that always returns an error
@@ -434,21 +444,17 @@ func TestGetRoccoError(t *testing.T) {
 }
 
 func TestHandler_ValidationInput(t *testing.T) {
-	type validatedInput struct {
-		Email string `json:"email"`
-		Age   int    `json:"age"`
-	}
-
-	handler := NewHandler[validatedInput, testOutput](
+	// Use failingValidatableInput which implements Validatable and always fails
+	handler := NewHandler[failingValidatableInput, testOutput](
 		"test",
 		"POST",
 		"/test",
-		func(_ *Request[validatedInput]) (testOutput, error) {
+		func(_ *Request[failingValidatableInput]) (testOutput, error) {
 			return testOutput{Message: "valid"}, nil
 		},
-	).WithValidator(failingValidator[validatedInput, testOutput]{})
+	)
 
-	// Test input validation with failing validator
+	// Test input validation with failing Validatable type
 	input := `{"email":"test@example.com","age":25}`
 	req := httptest.NewRequest("POST", "/test", bytes.NewReader([]byte(input)))
 	w := httptest.NewRecorder()
@@ -473,19 +479,15 @@ func TestHandler_ValidationInput(t *testing.T) {
 }
 
 func TestHandler_ValidationOutput(t *testing.T) {
-	type validatedOutput struct {
-		Email string `json:"email"`
-	}
-
-	handler := NewHandler[NoBody, validatedOutput](
+	// Use failingValidatableOutput which implements Validatable and always fails
+	handler := NewHandler[NoBody, failingValidatableOutput](
 		"test",
 		"GET",
 		"/test",
-		func(_ *Request[NoBody]) (validatedOutput, error) {
-			return validatedOutput{Email: "test@example.com"}, nil
+		func(_ *Request[NoBody]) (failingValidatableOutput, error) {
+			return failingValidatableOutput{Email: "test@example.com"}, nil
 		},
-	).WithValidator(failingValidator[NoBody, validatedOutput]{}).
-		WithOutputValidation() // Opt-in to output validation for this test
+	).WithOutputValidation() // Opt-in to output validation for this test
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
@@ -1051,15 +1053,15 @@ func TestHandler_ApplyDefaultCodec_DoesNotOverrideExplicit(t *testing.T) {
 
 func TestHandler_ValidationError_FallbackPath(t *testing.T) {
 	// Test that plain errors (without ValidationDetails) are handled correctly.
-	handler := NewHandler[testInput, testOutput](
+	// Use plainErrorValidatableInput which implements Validatable and returns a plain error.
+	handler := NewHandler[plainErrorValidatableInput, testOutput](
 		"test",
 		"POST",
 		"/test",
-		func(_ *Request[testInput]) (testOutput, error) {
+		func(_ *Request[plainErrorValidatableInput]) (testOutput, error) {
 			return testOutput{Message: "OK"}, nil
 		},
-	).WithValidator(plainErrorValidator[testInput, testOutput]{}).
-		WithErrors(ErrValidationFailed)
+	).WithErrors(ErrValidationFailed)
 
 	body := `{"name":"test","count":1}`
 	req := httptest.NewRequest("POST", "/test", strings.NewReader(body))
@@ -1105,10 +1107,10 @@ func TestGenerateHandlerName(t *testing.T) {
 			if !strings.HasPrefix(name, tt.expected) {
 				t.Errorf("expected prefix %q, got %q", tt.expected, name)
 			}
-			// Check suffix is 4 hex chars
+			// Check suffix is 8 hex chars
 			suffix := name[len(tt.expected):]
-			if len(suffix) != 4 {
-				t.Errorf("expected 4 char suffix, got %q (%d chars)", suffix, len(suffix))
+			if len(suffix) != 8 {
+				t.Errorf("expected 8 char suffix, got %q (%d chars)", suffix, len(suffix))
 			}
 		})
 	}

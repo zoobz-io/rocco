@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/zoobzio/capitan"
+	"github.com/zoobzio/check"
 )
 
 // TestMain sets up capitan in sync mode for all tests.
@@ -28,19 +29,26 @@ func setupSyncMode(t *testing.T) {
 	// Sync mode already configured in TestMain.
 }
 
-// eventsFailingValidator is a test validator that always fails validation.
-type eventsFailingValidator[In, Out any] struct{}
-
-func (eventsFailingValidator[In, Out]) ValidateInput(In) error {
-	return NewValidationError([]ValidationFieldError{
-		{Field: "test", Tag: "required", Value: ""},
-	})
+// eventsFailingValidatableInput implements Validatable and always fails.
+type eventsFailingValidatableInput struct {
+	Email string `json:"email"`
 }
 
-func (eventsFailingValidator[In, Out]) ValidateOutput(Out) error {
-	return NewValidationError([]ValidationFieldError{
-		{Field: "test", Tag: "required", Value: ""},
-	})
+func (eventsFailingValidatableInput) Validate() error {
+	return check.All(
+		check.Required("", "test"),
+	)
+}
+
+// eventsFailingValidatableOutput implements Validatable and always fails.
+type eventsFailingValidatableOutput struct {
+	Email string `json:"email"`
+}
+
+func (eventsFailingValidatableOutput) Validate() error {
+	return check.All(
+		check.Required("", "test"),
+	)
 }
 
 func TestEvents_EngineCreated(t *testing.T) {
@@ -427,19 +435,15 @@ func TestEvents_RequestValidationInputFailed(t *testing.T) {
 	})
 	defer listener.Close()
 
-	type validatedInput struct {
-		Email string `json:"email"`
-	}
-
 	engine := newTestEngine()
-	handler := NewHandler[validatedInput, testOutput](
+	handler := NewHandler[eventsFailingValidatableInput, testOutput](
 		"validation-handler",
 		"POST",
 		"/validate",
-		func(_ *Request[validatedInput]) (testOutput, error) {
+		func(_ *Request[eventsFailingValidatableInput]) (testOutput, error) {
 			return testOutput{Message: "ok"}, nil
 		},
-	).WithValidator(eventsFailingValidator[validatedInput, testOutput]{})
+	)
 	engine.WithHandlers(handler)
 
 	body, _ := json.Marshal(map[string]string{"email": "test@example.com"})
@@ -467,20 +471,15 @@ func TestEvents_RequestValidationOutputFailed(t *testing.T) {
 	})
 	defer listener.Close()
 
-	type validatedOutput struct {
-		Email string `json:"email"`
-	}
-
 	engine := newTestEngine()
-	handler := NewHandler[NoBody, validatedOutput](
+	handler := NewHandler[NoBody, eventsFailingValidatableOutput](
 		"output-validation-handler",
 		"GET",
 		"/output-validate",
-		func(_ *Request[NoBody]) (validatedOutput, error) {
-			return validatedOutput{Email: "test@example.com"}, nil
+		func(_ *Request[NoBody]) (eventsFailingValidatableOutput, error) {
+			return eventsFailingValidatableOutput{Email: "test@example.com"}, nil
 		},
-	).WithValidator(eventsFailingValidator[NoBody, validatedOutput]{}).
-		WithOutputValidation()
+	).WithOutputValidation()
 	engine.WithHandlers(handler)
 
 	req := httptest.NewRequest("GET", "/output-validate", nil)

@@ -1,32 +1,20 @@
 package rocco
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/zoobzio/check"
 )
-
-func TestNoOpValidator_ValidateInput(t *testing.T) {
-	v := NoOpValidator[testInput, testOutput]{}
-
-	err := v.ValidateInput(testInput{Name: "test", Count: 5})
-	if err != nil {
-		t.Errorf("NoOpValidator.ValidateInput should return nil, got %v", err)
-	}
-}
-
-func TestNoOpValidator_ValidateOutput(t *testing.T) {
-	v := NoOpValidator[testInput, testOutput]{}
-
-	err := v.ValidateOutput(testOutput{Message: "test"})
-	if err != nil {
-		t.Errorf("NoOpValidator.ValidateOutput should return nil, got %v", err)
-	}
-}
 
 func TestNewValidationError(t *testing.T) {
 	fields := []ValidationFieldError{
-		{Field: "name", Tag: "required", Value: ""},
-		{Field: "email", Tag: "email", Value: "invalid"},
+		{Field: "name", Message: "is required"},
+		{Field: "email", Message: "must be a valid email"},
 	}
 
 	err := NewValidationError(fields)
@@ -46,8 +34,8 @@ func TestNewValidationError(t *testing.T) {
 	if details.Fields[0].Field != "name" {
 		t.Errorf("expected field 'name', got %q", details.Fields[0].Field)
 	}
-	if details.Fields[1].Tag != "email" {
-		t.Errorf("expected tag 'email', got %q", details.Fields[1].Tag)
+	if details.Fields[1].Message != "must be a valid email" {
+		t.Errorf("expected message 'must be a valid email', got %q", details.Fields[1].Message)
 	}
 }
 
@@ -88,97 +76,143 @@ func TestValidationDetails_Error(t *testing.T) {
 	}
 }
 
-func TestHandler_WithValidator(t *testing.T) {
-	called := false
+// validatableInput implements Validatable using check.
+type validatableInput struct {
+	Name string `json:"name"`
+}
 
-	handler := NewHandler[testInput, testOutput](
-		"test",
-		"POST",
-		"/test",
+func (v validatableInput) Validate() error {
+	return check.All(
+		check.Required(v.Name, "name"),
+	)
+}
+
+// nonValidatableInput does NOT implement Validatable.
+type nonValidatableInput struct {
+	Name string `json:"name"`
+}
+
+func TestHandler_InputValidatable_Detection(t *testing.T) {
+	// Handler with validatable input should detect it
+	handler := NewHandler[validatableInput, testOutput](
+		"test", "POST", "/test",
+		func(_ *Request[validatableInput]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	)
+
+	if !handler.inputValidatable {
+		t.Error("expected inputValidatable to be true for validatableInput")
+	}
+
+	// Handler with non-validatable input should not detect it
+	handler2 := NewHandler[nonValidatableInput, testOutput](
+		"test", "POST", "/test",
+		func(_ *Request[nonValidatableInput]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	)
+
+	if handler2.inputValidatable {
+		t.Error("expected inputValidatable to be false for nonValidatableInput")
+	}
+}
+
+func TestHandler_OutputValidatable_Detection(t *testing.T) {
+	// Handler with validatable output should detect it
+	handler := NewHandler[testInput, validatableInput](
+		"test", "POST", "/test",
+		func(_ *Request[testInput]) (validatableInput, error) {
+			return validatableInput{}, nil
+		},
+	)
+
+	if !handler.outputValidatable {
+		t.Error("expected outputValidatable to be true for validatableInput")
+	}
+
+	// Handler with non-validatable output should not detect it
+	handler2 := NewHandler[testInput, testOutput](
+		"test", "POST", "/test",
 		func(_ *Request[testInput]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	)
+
+	if handler2.outputValidatable {
+		t.Error("expected outputValidatable to be false for testOutput")
+	}
+}
+
+func TestStreamHandler_InputValidatable_Detection(t *testing.T) {
+	// StreamHandler with validatable input should detect it
+	handler := NewStreamHandler[validatableInput, streamEvent](
+		"test", "POST", "/events",
+		func(_ *Request[validatableInput], _ Stream[streamEvent]) error {
+			return nil
+		},
+	)
+
+	if !handler.inputValidatable {
+		t.Error("expected inputValidatable to be true for validatableInput")
+	}
+
+	// StreamHandler with non-validatable input should not detect it
+	handler2 := NewStreamHandler[nonValidatableInput, streamEvent](
+		"test", "POST", "/events",
+		func(_ *Request[nonValidatableInput], _ Stream[streamEvent]) error {
+			return nil
+		},
+	)
+
+	if handler2.inputValidatable {
+		t.Error("expected inputValidatable to be false for nonValidatableInput")
+	}
+}
+
+func TestCheckIntegration(t *testing.T) {
+	// Test that check.Result is properly handled by writeValidationErrorResponse
+	handler := NewHandler[failingValidatableInput, testOutput](
+		"test", "POST", "/test",
+		func(_ *Request[failingValidatableInput]) (testOutput, error) {
 			return testOutput{Message: "ok"}, nil
 		},
 	)
 
-	// Default should be NoOpValidator
-	if handler.validator == nil {
-		t.Fatal("handler.validator should not be nil")
+	body := `{"email":"test@example.com","age":25}`
+	req := httptest.NewRequest("POST", "/test", strings.NewReader(body))
+	w := httptest.NewRecorder()
+
+	_, err := handler.Process(context.Background(), req, w)
+	if err == nil {
+		t.Fatal("expected validation error")
 	}
 
-	// Create a custom validator
-	customValidator := &customTestValidator[testInput, testOutput]{
-		inputFn: func(in testInput) error {
-			called = true
-			return nil
-		},
+	if w.Code != 422 {
+		t.Errorf("expected status 422, got %d", w.Code)
 	}
 
-	handler.WithValidator(customValidator)
-
-	// Verify WithValidator returns the handler for chaining
-	if handler.validator != customValidator {
-		t.Error("WithValidator should set the validator")
+	// Verify response has field error with message
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
 	}
 
-	// Verify the validator is actually used
-	handler.validator.ValidateInput(testInput{})
-	if !called {
-		t.Error("custom validator should have been called")
-	}
-}
-
-func TestStreamHandler_WithValidator(t *testing.T) {
-	called := false
-
-	handler := NewStreamHandler[testInput, streamEvent](
-		"test-stream",
-		"POST",
-		"/events",
-		func(_ *Request[testInput], _ Stream[streamEvent]) error {
-			return nil
-		},
-	)
-
-	// Default should be NoOpValidator
-	if handler.validator == nil {
-		t.Fatal("handler.validator should not be nil")
+	details, ok := resp["details"].(map[string]any)
+	if !ok {
+		t.Fatal("expected details in response")
 	}
 
-	customValidator := &customTestValidator[testInput, streamEvent]{
-		inputFn: func(in testInput) error {
-			called = true
-			return nil
-		},
+	fields, ok := details["fields"].([]any)
+	if !ok || len(fields) == 0 {
+		t.Fatal("expected fields in details")
 	}
 
-	handler.WithValidator(customValidator)
-
-	if handler.validator != customValidator {
-		t.Error("WithValidator should set the validator")
+	firstField := fields[0].(map[string]any)
+	if firstField["field"] != "test" {
+		t.Errorf("expected field 'test', got %v", firstField["field"])
 	}
-
-	handler.validator.ValidateInput(testInput{})
-	if !called {
-		t.Error("custom validator should have been called")
+	if firstField["message"] == nil || firstField["message"] == "" {
+		t.Error("expected message to be set")
 	}
-}
-
-// customTestValidator is a configurable validator for testing.
-type customTestValidator[In, Out any] struct {
-	inputFn  func(In) error
-	outputFn func(Out) error
-}
-
-func (v *customTestValidator[In, Out]) ValidateInput(in In) error {
-	if v.inputFn != nil {
-		return v.inputFn(in)
-	}
-	return nil
-}
-
-func (v *customTestValidator[In, Out]) ValidateOutput(out Out) error {
-	if v.outputFn != nil {
-		return v.outputFn(out)
-	}
-	return nil
 }

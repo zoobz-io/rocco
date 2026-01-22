@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/zoobzio/check"
 )
 
 type streamEvent struct {
@@ -24,17 +26,15 @@ type streamInput struct {
 	Topic string `json:"topic"`
 }
 
-// streamFailingValidator is a test validator that always fails validation.
-type streamFailingValidator[In, Out any] struct{}
-
-func (streamFailingValidator[In, Out]) ValidateInput(In) error {
-	return NewValidationError([]ValidationFieldError{
-		{Field: "topic", Tag: "required", Value: ""},
-	})
+// streamFailingValidatableInput implements Validatable and always fails.
+type streamFailingValidatableInput struct {
+	Topic string `json:"topic"`
 }
 
-func (streamFailingValidator[In, Out]) ValidateOutput(Out) error {
-	return nil
+func (streamFailingValidatableInput) Validate() error {
+	return check.All(
+		check.Required("", "topic"),
+	)
 }
 
 func TestNewStreamHandler(t *testing.T) {
@@ -345,17 +345,17 @@ func TestStreamHandler_Process_WithInputBody(t *testing.T) {
 }
 
 func TestStreamHandler_Process_ValidationError(t *testing.T) {
-	handler := NewStreamHandler[streamInput, streamEvent](
+	handler := NewStreamHandler[streamFailingValidatableInput, streamEvent](
 		"test-stream",
 		"POST",
 		"/events",
-		func(_ *Request[streamInput], _ Stream[streamEvent]) error {
+		func(_ *Request[streamFailingValidatableInput], _ Stream[streamEvent]) error {
 			t.Error("handler should not be called on validation error")
 			return nil
 		},
-	).WithValidator(streamFailingValidator[streamInput, streamEvent]{})
+	)
 
-	input := streamInput{Topic: "test"}
+	input := streamFailingValidatableInput{Topic: "test"}
 	body, _ := json.Marshal(input)
 
 	req := httptest.NewRequest("POST", "/events", bytes.NewReader(body))

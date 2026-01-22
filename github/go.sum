@@ -1,11 +1,13 @@
 github.com/zoobzio/capitan v1.0.0 h1:hEB8XX/FmtIDHKjjTJrUWXkDiZTYa/Jtd/qWO0yc2Dc=
 github.com/zoobzio/capitan v1.0.0/go.mod h1:UNZvqLPX2REzKLVfU4EfL9GRe6zddsj6aSWaqNUGAIw=
+github.com/zoobzio/check v0.0.2 h1:Y1zDlXIuj6rbSAAj5aqSooMnEgfF6Ap6gNoMdb0r0Qo=
 github.com/zoobzio/clockz v1.0.0 h1:B0uzNpgdzqVKewyHUpx+EIZg+zS8Y0tXcVF1qY6IN8A=
 github.com/zoobzio/clockz v1.0.0/go.mod h1:YRTE9Ni6hVqmO2kfx4zeTTW25sI+XL+qBS/UneIMa7M=
 github.com/zoobzio/openapi v1.0.0 h1:fm0efmJE6Qhtj6cKnY1k80BGyuwCGtPY2lvmjdbD724=
 github.com/zoobzio/openapi v1.0.0/go.mod h1:B9H/O52knkfi9j9KIGRufcSFYUyAg6gDhUGocMCFNfo=
 github.com/zoobzio/sentinel v1.0.2 h1:hTs5Ke2Vi0VgOkoHSJF9G3BYnxTQjMbvOH+qbbQLaoY=
 github.com/zoobzio/sentinel v1.0.2/go.mod h1:gtsD0AYlTEI8ajpEQ3azb7BDZicdsESOB1dJpQqgDKc=
+golang.org/x/exp v0.0.0-20260112195511-716be5621a96 h1:Z/6YuSHTLOHfNFdb8zVZomZr7cqNgTJvA8+Qz75D8gU=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
