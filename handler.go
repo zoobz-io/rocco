@@ -2,11 +2,14 @@ package rocco
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/zoobzio/capitan"
 	"github.com/zoobzio/sentinel"
@@ -267,6 +270,70 @@ func NewHandler[In, Out any](name string, method, path string, fn func(*Request[
 		validator:       NoOpValidator[In, Out]{},
 		middleware:      make([]func(http.Handler) http.Handler, 0),
 	}
+}
+
+// generateHandlerName creates a unique handler name from method and path.
+// Format: "method-path-segments-xxxx" where xxxx is 4 random hex chars.
+// Example: GET /users/{id} -> "get-users-id-a3f1".
+func generateHandlerName(method, path string) string {
+	// Normalise method to lowercase
+	name := strings.ToLower(method)
+
+	// Process path segments
+	path = strings.Trim(path, "/")
+	if path != "" {
+		segments := strings.Split(path, "/")
+		for _, seg := range segments {
+			// Strip braces from path params: {id} -> id
+			seg = strings.TrimPrefix(seg, "{")
+			seg = strings.TrimSuffix(seg, "}")
+			if seg != "" {
+				name += "-" + seg
+			}
+		}
+	}
+
+	// Append 4 random hex chars for uniqueness
+	suffix := make([]byte, 2)
+	if _, err := rand.Read(suffix); err != nil {
+		// Fallback if crypto/rand fails (shouldn't happen)
+		suffix = []byte{0x00, 0x00}
+	}
+	name += "-" + hex.EncodeToString(suffix)
+
+	return name
+}
+
+// GET creates a handler for GET requests.
+func GET[In, Out any](path string, fn func(*Request[In]) (Out, error)) *Handler[In, Out] {
+	return NewHandler[In, Out](generateHandlerName(http.MethodGet, path), http.MethodGet, path, fn)
+}
+
+// POST creates a handler for POST requests.
+func POST[In, Out any](path string, fn func(*Request[In]) (Out, error)) *Handler[In, Out] {
+	return NewHandler[In, Out](generateHandlerName(http.MethodPost, path), http.MethodPost, path, fn)
+}
+
+// PUT creates a handler for PUT requests.
+func PUT[In, Out any](path string, fn func(*Request[In]) (Out, error)) *Handler[In, Out] {
+	return NewHandler[In, Out](generateHandlerName(http.MethodPut, path), http.MethodPut, path, fn)
+}
+
+// PATCH creates a handler for PATCH requests.
+func PATCH[In, Out any](path string, fn func(*Request[In]) (Out, error)) *Handler[In, Out] {
+	return NewHandler[In, Out](generateHandlerName(http.MethodPatch, path), http.MethodPatch, path, fn)
+}
+
+// DELETE creates a handler for DELETE requests.
+func DELETE[In, Out any](path string, fn func(*Request[In]) (Out, error)) *Handler[In, Out] {
+	return NewHandler[In, Out](generateHandlerName(http.MethodDelete, path), http.MethodDelete, path, fn)
+}
+
+// WithName sets a custom handler name, overriding the auto-generated one.
+// This affects the OpenAPI operationId and log entries.
+func (h *Handler[In, Out]) WithName(name string) *Handler[In, Out] {
+	h.spec.Name = name
+	return h
 }
 
 // WithSummary sets the OpenAPI summary.

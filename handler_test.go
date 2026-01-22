@@ -1084,3 +1084,139 @@ func TestHandler_ValidationError_FallbackPath(t *testing.T) {
 		t.Errorf("expected message 'plain validation error', got %q", resp["message"])
 	}
 }
+
+func TestGenerateHandlerName(t *testing.T) {
+	tests := []struct {
+		method   string
+		path     string
+		expected string // prefix only, suffix is random
+	}{
+		{"GET", "/users", "get-users-"},
+		{"POST", "/users", "post-users-"},
+		{"GET", "/users/{id}", "get-users-id-"},
+		{"PUT", "/users/{id}/profile", "put-users-id-profile-"},
+		{"DELETE", "/", "delete-"},
+		{"PATCH", "items/{itemId}", "patch-items-itemId-"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			name := generateHandlerName(tt.method, tt.path)
+			if !strings.HasPrefix(name, tt.expected) {
+				t.Errorf("expected prefix %q, got %q", tt.expected, name)
+			}
+			// Check suffix is 4 hex chars
+			suffix := name[len(tt.expected):]
+			if len(suffix) != 4 {
+				t.Errorf("expected 4 char suffix, got %q (%d chars)", suffix, len(suffix))
+			}
+		})
+	}
+}
+
+func TestGenerateHandlerName_Uniqueness(t *testing.T) {
+	names := make(map[string]bool)
+	for i := 0; i < 100; i++ {
+		name := generateHandlerName("GET", "/test")
+		if names[name] {
+			t.Errorf("duplicate name generated: %s", name)
+		}
+		names[name] = true
+	}
+}
+
+func TestGET(t *testing.T) {
+	handler := GET[NoBody, testOutput]("/users/{id}", func(r *Request[NoBody]) (testOutput, error) {
+		return testOutput{Message: "user"}, nil
+	})
+
+	spec := handler.Spec()
+	if spec.Method != "GET" {
+		t.Errorf("expected method GET, got %q", spec.Method)
+	}
+	if spec.Path != "/users/{id}" {
+		t.Errorf("expected path '/users/{id}', got %q", spec.Path)
+	}
+	if !strings.HasPrefix(spec.Name, "get-users-id-") {
+		t.Errorf("expected name prefix 'get-users-id-', got %q", spec.Name)
+	}
+}
+
+func TestPOST(t *testing.T) {
+	handler := POST[testInput, testOutput]("/users", func(r *Request[testInput]) (testOutput, error) {
+		return testOutput{Message: r.Body.Name}, nil
+	})
+
+	spec := handler.Spec()
+	if spec.Method != "POST" {
+		t.Errorf("expected method POST, got %q", spec.Method)
+	}
+	if spec.Path != "/users" {
+		t.Errorf("expected path '/users', got %q", spec.Path)
+	}
+}
+
+func TestPUT(t *testing.T) {
+	handler := PUT[testInput, testOutput]("/users/{id}", func(r *Request[testInput]) (testOutput, error) {
+		return testOutput{}, nil
+	})
+
+	spec := handler.Spec()
+	if spec.Method != "PUT" {
+		t.Errorf("expected method PUT, got %q", spec.Method)
+	}
+}
+
+func TestPATCH(t *testing.T) {
+	handler := PATCH[testInput, testOutput]("/users/{id}", func(r *Request[testInput]) (testOutput, error) {
+		return testOutput{}, nil
+	})
+
+	spec := handler.Spec()
+	if spec.Method != "PATCH" {
+		t.Errorf("expected method PATCH, got %q", spec.Method)
+	}
+}
+
+func TestDELETE(t *testing.T) {
+	handler := DELETE[NoBody, testOutput]("/users/{id}", func(r *Request[NoBody]) (testOutput, error) {
+		return testOutput{}, nil
+	})
+
+	spec := handler.Spec()
+	if spec.Method != "DELETE" {
+		t.Errorf("expected method DELETE, got %q", spec.Method)
+	}
+}
+
+func TestWithName(t *testing.T) {
+	handler := GET[NoBody, testOutput]("/users", func(r *Request[NoBody]) (testOutput, error) {
+		return testOutput{}, nil
+	}).WithName("list-all-users")
+
+	spec := handler.Spec()
+	if spec.Name != "list-all-users" {
+		t.Errorf("expected name 'list-all-users', got %q", spec.Name)
+	}
+}
+
+func TestHTTPMethodShortcuts_Chaining(t *testing.T) {
+	handler := GET[NoBody, testOutput]("/users", func(r *Request[NoBody]) (testOutput, error) {
+		return testOutput{}, nil
+	}).
+		WithName("list-users").
+		WithSummary("List all users").
+		WithTags("users").
+		WithAuthentication()
+
+	spec := handler.Spec()
+	if spec.Name != "list-users" {
+		t.Errorf("expected name 'list-users', got %q", spec.Name)
+	}
+	if spec.Summary != "List all users" {
+		t.Errorf("expected summary 'List all users', got %q", spec.Summary)
+	}
+	if !spec.RequiresAuth {
+		t.Error("expected RequiresAuth to be true")
+	}
+}
