@@ -202,7 +202,7 @@ func (v *Validator) refreshJWKS(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("auth0: failed to fetch JWKS: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(ctx, resp, v.jwksURL)
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("auth0: JWKS request failed with status %d", resp.StatusCode)
@@ -313,4 +313,14 @@ func extractBearerToken(r *http.Request) (string, error) {
 	}
 
 	return token, nil
+}
+
+// closeResponseBody closes the response body and emits an event on error.
+func closeResponseBody(ctx context.Context, resp *http.Response, endpoint string) {
+	if err := resp.Body.Close(); err != nil {
+		capitan.Warn(ctx, rocco.ResponseBodyCloseError,
+			rocco.EndpointKey.Field(endpoint),
+			rocco.ErrorKey.Field(err.Error()),
+		)
+	}
 }

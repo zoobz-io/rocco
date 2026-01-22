@@ -6,15 +6,26 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/zoobzio/capitan"
 	"github.com/zoobzio/clockz"
+	"github.com/zoobzio/rocco"
 )
+
+// TestMain sets up capitan in sync mode for all tests.
+func TestMain(m *testing.M) {
+	capitan.Configure(capitan.WithSyncMode())
+	os.Exit(m.Run())
+}
 
 // testSetup creates a mock JWKS server and returns all test fixtures.
 func testSetup(t *testing.T) (*httptest.Server, *rsa.PrivateKey, Config) {
@@ -591,5 +602,42 @@ func TestParseRSAPublicKey_invalid(t *testing.T) {
 				t.Error("parseRSAPublicKey() should fail")
 			}
 		})
+	}
+}
+
+// errorCloser is an io.ReadCloser that returns an error on Close.
+type errorCloser struct {
+	io.Reader
+}
+
+func (errorCloser) Close() error {
+	return errors.New("simulated close error")
+}
+
+func Test_closeResponseBody_emitsEvent(t *testing.T) {
+	var received bool
+	var endpoint, errorMsg string
+
+	listener := capitan.Hook(rocco.ResponseBodyCloseError, func(_ context.Context, e *capitan.Event) {
+		received = true
+		endpoint, _ = rocco.EndpointKey.From(e)
+		errorMsg, _ = rocco.ErrorKey.From(e)
+	})
+	defer listener.Close()
+
+	resp := &http.Response{
+		Body: errorCloser{},
+	}
+
+	closeResponseBody(context.Background(), resp, "https://test.auth0.com/.well-known/jwks.json")
+
+	if !received {
+		t.Error("ResponseBodyCloseError not emitted")
+	}
+	if endpoint != "https://test.auth0.com/.well-known/jwks.json" {
+		t.Errorf("endpoint = %q, want %q", endpoint, "https://test.auth0.com/.well-known/jwks.json")
+	}
+	if errorMsg != "simulated close error" {
+		t.Errorf("error = %q, want %q", errorMsg, "simulated close error")
 	}
 }

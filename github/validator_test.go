@@ -3,13 +3,24 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/zoobzio/capitan"
 	"github.com/zoobzio/clockz"
+	"github.com/zoobzio/rocco"
 )
+
+// TestMain sets up capitan in sync mode for all tests.
+func TestMain(m *testing.M) {
+	capitan.Configure(capitan.WithSyncMode())
+	os.Exit(m.Run())
+}
 
 // mockGitHubServer creates a test server that mocks GitHub API responses.
 func mockGitHubServer(t *testing.T, user *GitHubUser, orgs []GitHubOrg, teams []GitHubTeam, scopes string) *httptest.Server {
@@ -713,5 +724,42 @@ func TestValidator_pagination_orgs(t *testing.T) {
 	}
 	if page != 2 {
 		t.Errorf("page = %d, want 2 (pagination should have fetched 2 pages)", page)
+	}
+}
+
+// errorCloser is an io.ReadCloser that returns an error on Close.
+type errorCloser struct {
+	io.Reader
+}
+
+func (errorCloser) Close() error {
+	return errors.New("simulated close error")
+}
+
+func Test_closeResponseBody_emitsEvent(t *testing.T) {
+	var received bool
+	var endpoint, errorMsg string
+
+	listener := capitan.Hook(rocco.ResponseBodyCloseError, func(_ context.Context, e *capitan.Event) {
+		received = true
+		endpoint, _ = rocco.EndpointKey.From(e)
+		errorMsg, _ = rocco.ErrorKey.From(e)
+	})
+	defer listener.Close()
+
+	resp := &http.Response{
+		Body: errorCloser{},
+	}
+
+	closeResponseBody(context.Background(), resp, "/user")
+
+	if !received {
+		t.Error("ResponseBodyCloseError not emitted")
+	}
+	if endpoint != "/user" {
+		t.Errorf("endpoint = %q, want %q", endpoint, "/user")
+	}
+	if errorMsg != "simulated close error" {
+		t.Errorf("error = %q, want %q", errorMsg, "simulated close error")
 	}
 }

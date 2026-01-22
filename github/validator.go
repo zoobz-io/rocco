@@ -172,7 +172,7 @@ func (v *Validator) fetchUser(ctx context.Context, token string) (*GitHubUser, [
 	if err != nil {
 		return nil, nil, fmt.Errorf("github: failed to fetch user: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(ctx, resp, "/user")
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		return nil, nil, errors.New("github: invalid or expired token")
@@ -213,22 +213,24 @@ func (v *Validator) fetchOrganizations(ctx context.Context, token string) ([]str
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			closeResponseBody(ctx, resp, "/user/orgs")
 			return nil, fmt.Errorf("github: orgs request failed with status %d", resp.StatusCode)
 		}
 
 		var orgs []GitHubOrg
 		if err := json.NewDecoder(resp.Body).Decode(&orgs); err != nil {
-			resp.Body.Close()
+			closeResponseBody(ctx, resp, "/user/orgs")
 			return nil, fmt.Errorf("github: failed to decode orgs response: %w", err)
 		}
-		resp.Body.Close()
+
+		nextURL := getNextPageURL(resp.Header.Get("Link"))
+		closeResponseBody(ctx, resp, "/user/orgs")
 
 		for _, org := range orgs {
 			result = append(result, org.Login)
 		}
 
-		url = getNextPageURL(resp.Header.Get("Link"))
+		url = nextURL
 	}
 
 	return result, nil
@@ -254,23 +256,25 @@ func (v *Validator) fetchTeams(ctx context.Context, token string) ([]string, err
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			closeResponseBody(ctx, resp, "/user/teams")
 			// Teams endpoint requires read:org scope - may fail gracefully
 			return nil, nil
 		}
 
 		var teams []GitHubTeam
 		if err := json.NewDecoder(resp.Body).Decode(&teams); err != nil {
-			resp.Body.Close()
+			closeResponseBody(ctx, resp, "/user/teams")
 			return nil, fmt.Errorf("github: failed to decode teams response: %w", err)
 		}
-		resp.Body.Close()
+
+		nextURL := getNextPageURL(resp.Header.Get("Link"))
+		closeResponseBody(ctx, resp, "/user/teams")
 
 		for _, team := range teams {
 			result = append(result, fmt.Sprintf("%s/%s", team.Organization.Login, team.Slug))
 		}
 
-		url = getNextPageURL(resp.Header.Get("Link"))
+		url = nextURL
 	}
 
 	return result, nil
@@ -393,6 +397,16 @@ func getNextPageURL(linkHeader string) string {
 	}
 
 	return ""
+}
+
+// closeResponseBody closes the response body and emits an event on error.
+func closeResponseBody(ctx context.Context, resp *http.Response, endpoint string) {
+	if err := resp.Body.Close(); err != nil {
+		capitan.Warn(ctx, rocco.ResponseBodyCloseError,
+			rocco.EndpointKey.Field(endpoint),
+			rocco.ErrorKey.Field(err.Error()),
+		)
+	}
 }
 
 // Extractor returns an identity extractor function for use with rocco.NewEngine.

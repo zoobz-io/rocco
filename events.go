@@ -93,6 +93,10 @@ var (
 	// Fields: HandlerNameKey, ErrorKey.
 	RequestBodyCloseError = capitan.NewSignal("http.request.body.close.error", "Failed to close request body stream")
 
+	// ResponseBodyCloseError is emitted when closing an HTTP client response body fails.
+	// Fields: EndpointKey, ErrorKey.
+	ResponseBodyCloseError = capitan.NewSignal("http.response.body.close.error", "Failed to close HTTP client response body")
+
 	// ResponseWriteError is emitted when writing the response body fails.
 	// Fields: HandlerNameKey, ErrorKey.
 	ResponseWriteError = capitan.NewSignal("http.response.write.error", "Failed to write response body to client")
@@ -169,6 +173,7 @@ var (
 	DurationMsKey  = capitan.NewInt64Key("duration_ms")
 	ErrorKey       = capitan.NewStringKey("error")
 	GracefulKey    = capitan.NewBoolKey("graceful")
+	EndpointKey    = capitan.NewStringKey("endpoint")
 
 	// Authentication/Authorization fields.
 	IdentityIDKey     = capitan.NewStringKey("identity_id")
