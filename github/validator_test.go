@@ -218,6 +218,54 @@ func TestValidator_Validate_team_restriction_denied(t *testing.T) {
 	}
 }
 
+func TestValidator_Validate_teams_populated_without_restrictions(t *testing.T) {
+	user := &GitHubUser{ID: 1, Login: "testuser"}
+	orgs := []GitHubOrg{{ID: 1, Login: "acme-corp"}}
+	teams := []GitHubTeam{
+		{
+			ID:   1,
+			Slug: "developers",
+			Organization: GitHubTeamOrg{
+				ID:    1,
+				Login: "acme-corp",
+			},
+		},
+		{
+			ID:   2,
+			Slug: "backend",
+			Organization: GitHubTeamOrg{
+				ID:    1,
+				Login: "acme-corp",
+			},
+		},
+	}
+
+	server := mockGitHubServer(t, user, orgs, teams, "")
+
+	// No AllowedTeams restriction - teams should still be fetched for roles
+	cfg := Config{}.WithBaseURL(server.URL)
+	v, _ := NewValidator(cfg)
+
+	identity, err := v.Validate(context.Background(), "valid-token")
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	// Verify teams are populated
+	gotTeams := identity.Teams()
+	if len(gotTeams) != 2 {
+		t.Errorf("Teams() len = %d, want 2", len(gotTeams))
+	}
+
+	// Verify team roles are emitted
+	if !identity.HasRole("team:acme-corp/developers") {
+		t.Error("HasRole(team:acme-corp/developers) = false, want true")
+	}
+	if !identity.HasRole("team:acme-corp/backend") {
+		t.Error("HasRole(team:acme-corp/backend) = false, want true")
+	}
+}
+
 func TestValidator_Validate_require_verified_email(t *testing.T) {
 	user := &GitHubUser{ID: 1, Login: "testuser", Email: ""}
 	orgs := []GitHubOrg{}
@@ -252,6 +300,8 @@ func TestValidator_caching(t *testing.T) {
 			json.NewEncoder(w).Encode(&GitHubUser{ID: 1, Login: "testuser"})
 		case "/user/orgs":
 			json.NewEncoder(w).Encode([]GitHubOrg{})
+		case "/user/teams":
+			json.NewEncoder(w).Encode([]GitHubTeam{})
 		}
 	}))
 	t.Cleanup(server.Close)
@@ -288,6 +338,8 @@ func TestValidator_cache_expiry(t *testing.T) {
 			json.NewEncoder(w).Encode(&GitHubUser{ID: 1, Login: "testuser"})
 		case "/user/orgs":
 			json.NewEncoder(w).Encode([]GitHubOrg{})
+		case "/user/teams":
+			json.NewEncoder(w).Encode([]GitHubTeam{})
 		}
 	}))
 	t.Cleanup(server.Close)
@@ -331,6 +383,8 @@ func TestValidator_ClearCache(t *testing.T) {
 			json.NewEncoder(w).Encode(&GitHubUser{ID: 1, Login: "testuser"})
 		case "/user/orgs":
 			json.NewEncoder(w).Encode([]GitHubOrg{})
+		case "/user/teams":
+			json.NewEncoder(w).Encode([]GitHubTeam{})
 		}
 	}))
 	t.Cleanup(server.Close)
@@ -638,6 +692,8 @@ func TestValidator_cache_expiry_deletes_entry(t *testing.T) {
 			json.NewEncoder(w).Encode(&GitHubUser{ID: 1, Login: "testuser"})
 		case "/user/orgs":
 			json.NewEncoder(w).Encode([]GitHubOrg{})
+		case "/user/teams":
+			json.NewEncoder(w).Encode([]GitHubTeam{})
 		}
 	}))
 	t.Cleanup(server.Close)
@@ -650,7 +706,10 @@ func TestValidator_cache_expiry_deletes_entry(t *testing.T) {
 	v, _ := NewValidator(cfg)
 
 	// First request - caches the entry
-	_, _ = v.Validate(context.Background(), "valid-token")
+	_, err := v.Validate(context.Background(), "valid-token")
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
 	if fetchCount != 1 {
 		t.Fatalf("fetchCount = %d, want 1", fetchCount)
 	}
@@ -705,6 +764,8 @@ func TestValidator_pagination_orgs(t *testing.T) {
 					{ID: 3, Login: "org3"},
 				})
 			}
+		case "/user/teams":
+			json.NewEncoder(w).Encode([]GitHubTeam{})
 		}
 	}))
 	serverURL = server.URL

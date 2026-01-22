@@ -297,18 +297,20 @@ func (v *Validator) validateOrgMembership(identity *Identity) error {
 	return errors.New("github: user is not a member of any allowed organization")
 }
 
-// validateTeamMembership checks if user belongs to allowed teams.
+// validateTeamMembership fetches teams and checks membership if restrictions are configured.
+// Teams are always fetched and assigned to identity.teams for role building.
 func (v *Validator) validateTeamMembership(ctx context.Context, token string, identity *Identity) error {
+	// Always fetch teams for role building
+	teams, err := v.fetchTeams(ctx, token)
+	if err != nil {
+		return fmt.Errorf("github: failed to fetch teams: %w", err)
+	}
+	identity.teams = teams
+
+	// Only enforce membership check if restrictions are configured
 	if len(v.cfg.AllowedTeams) == 0 {
 		return nil
 	}
-
-	// Fetch teams (lazy - only when needed)
-	teams, err := v.fetchTeams(ctx, token)
-	if err != nil {
-		return fmt.Errorf("github: failed to validate team membership: %w", err)
-	}
-	identity.teams = teams
 
 	for _, allowedTeam := range v.cfg.AllowedTeams {
 		for _, userTeam := range teams {
