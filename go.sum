@@ -1,7 +1,7 @@
 github.com/zoobzio/capitan v1.0.0 h1:hEB8XX/FmtIDHKjjTJrUWXkDiZTYa/Jtd/qWO0yc2Dc=
 github.com/zoobzio/capitan v1.0.0/go.mod h1:UNZvqLPX2REzKLVfU4EfL9GRe6zddsj6aSWaqNUGAIw=
-github.com/zoobzio/check v0.0.2 h1:Y1zDlXIuj6rbSAAj5aqSooMnEgfF6Ap6gNoMdb0r0Qo=
-github.com/zoobzio/check v0.0.2/go.mod h1:db+zt4vWZEV65bLTbD/zx7cXJ6lYw+y2D+IPb08uIjA=
+github.com/zoobzio/check v0.0.3 h1:gyW9+v3B5q4obSmn6Ia7ShyMea0y5nb4LT+YA0hr61M=
+github.com/zoobzio/check v0.0.3/go.mod h1:V0bmr/WkpQewvl2VtNprmRXkMl3fI32rT/oKXaEAT6E=
 github.com/zoobzio/openapi v1.0.0 h1:fm0efmJE6Qhtj6cKnY1k80BGyuwCGtPY2lvmjdbD724=
 github.com/zoobzio/openapi v1.0.0/go.mod h1:B9H/O52knkfi9j9KIGRufcSFYUyAg6gDhUGocMCFNfo=
 github.com/zoobzio/sentinel v1.0.2 h1:hTs5Ke2Vi0VgOkoHSJF9G3BYnxTQjMbvOH+qbbQLaoY=
