@@ -126,8 +126,8 @@ type StreamHandler[In, Out any] struct {
 	// Error definitions with schemas for OpenAPI generation.
 	errorDefs []ErrorDefinition
 
-	// Validation.
-	validator Validator[In, Out]
+	// Validation flag (checked once at creation time).
+	inputValidatable bool // True if In implements Validatable.
 
 	// Middleware.
 	middleware []func(http.Handler) http.Handler
@@ -191,14 +191,18 @@ func (h *StreamHandler[In, Out]) Process(ctx context.Context, r *http.Request, w
 				return http.StatusUnprocessableEntity, unmarshalErr
 			}
 
-			// Validate input.
-			if inputErr := h.validator.ValidateInput(input); inputErr != nil {
-				capitan.Warn(ctx, RequestValidationInputFailed,
-					HandlerNameKey.Field(h.spec.Name),
-					ErrorKey.Field(inputErr.Error()),
-				)
-				writeValidationErrorResponse(ctx, w, inputErr, defaultCodec.ContentType(), h.spec.Name)
-				return http.StatusUnprocessableEntity, inputErr
+			// Validate input if type implements Validatable.
+			if h.inputValidatable {
+				if v, ok := any(input).(Validatable); ok {
+					if inputErr := v.Validate(); inputErr != nil {
+						capitan.Warn(ctx, RequestValidationInputFailed,
+							HandlerNameKey.Field(h.spec.Name),
+							ErrorKey.Field(inputErr.Error()),
+						)
+						writeValidationErrorResponse(ctx, w, inputErr, defaultCodec.ContentType(), h.spec.Name)
+						return http.StatusUnprocessableEntity, inputErr
+					}
+				}
 			}
 		}
 	}
@@ -300,6 +304,10 @@ func NewStreamHandler[In, Out any](name string, method, path string, fn func(*Re
 	inputMeta := sentinel.Scan[In]()
 	outputMeta := sentinel.Scan[Out]()
 
+	// Check if input type implements Validatable.
+	var zeroIn In
+	_, inputValidatable := any(zeroIn).(Validatable)
+
 	return &StreamHandler[In, Out]{
 		fn: fn,
 		spec: HandlerSpec{
@@ -319,10 +327,10 @@ func NewStreamHandler[In, Out any](name string, method, path string, fn func(*Re
 			Tags:           []string{},
 			IsStream:       true,
 		},
-		InputMeta:  inputMeta,
-		OutputMeta: outputMeta,
-		validator:  NoOpValidator[In, Out]{},
-		middleware: make([]func(http.Handler) http.Handler, 0),
+		InputMeta:        inputMeta,
+		OutputMeta:       outputMeta,
+		inputValidatable: inputValidatable,
+		middleware:       make([]func(http.Handler) http.Handler, 0),
 	}
 }
 
@@ -369,12 +377,6 @@ func (h *StreamHandler[In, Out]) WithErrors(errs ...ErrorDefinition) *StreamHand
 // WithMiddleware adds middleware to this handler.
 func (h *StreamHandler[In, Out]) WithMiddleware(middleware ...func(http.Handler) http.Handler) *StreamHandler[In, Out] {
 	h.middleware = append(h.middleware, middleware...)
-	return h
-}
-
-// WithValidator sets the validator for request validation.
-func (h *StreamHandler[In, Out]) WithValidator(v Validator[In, Out]) *StreamHandler[In, Out] {
-	h.validator = v
 	return h
 }
 

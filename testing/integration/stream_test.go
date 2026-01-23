@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zoobzio/check"
 	"github.com/zoobzio/rocco"
 	rtesting "github.com/zoobzio/rocco/testing"
 )
@@ -22,17 +23,15 @@ type streamInput struct {
 	Topic string `json:"topic"`
 }
 
-// streamFailingValidator is a test validator that always fails validation.
-type streamFailingValidator[In, Out any] struct{}
-
-func (streamFailingValidator[In, Out]) ValidateInput(In) error {
-	return rocco.NewValidationError([]rocco.ValidationFieldError{
-		{Field: "topic", Tag: "required", Value: ""},
-	})
+// streamFailingValidatableInput implements rocco.Validatable and always fails.
+type streamFailingValidatableInput struct {
+	Topic string `json:"topic"`
 }
 
-func (streamFailingValidator[In, Out]) ValidateOutput(Out) error {
-	return nil
+func (streamFailingValidatableInput) Validate() error {
+	return check.All(
+		check.Required("", "topic"),
+	)
 }
 
 func TestStreamHandler_FullLifecycle(t *testing.T) {
@@ -292,15 +291,15 @@ func TestStreamHandler_WithAuthentication(t *testing.T) {
 func TestStreamHandler_ValidationError(t *testing.T) {
 	engine := rtesting.TestEngine()
 
-	handler := rocco.NewStreamHandler[streamInput, streamEvent](
+	handler := rocco.NewStreamHandler[streamFailingValidatableInput, streamEvent](
 		"validation-stream",
 		http.MethodPost,
 		"/events",
-		func(_ *rocco.Request[streamInput], _ rocco.Stream[streamEvent]) error {
+		func(_ *rocco.Request[streamFailingValidatableInput], _ rocco.Stream[streamEvent]) error {
 			t.Error("handler should not be called on validation error")
 			return nil
 		},
-	).WithValidator(streamFailingValidator[streamInput, streamEvent]{})
+	)
 
 	engine.WithHandlers(handler)
 

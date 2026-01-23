@@ -1,13 +1,17 @@
 module github.com/zoobzio/rocco
 
-go 1.24
+go 1.24.0
 
 toolchain go1.25.5
 
 require (
 	github.com/zoobzio/capitan v1.0.0
+	github.com/zoobzio/check v0.0.2
 	github.com/zoobzio/openapi v1.0.0
 	github.com/zoobzio/sentinel v1.0.2
 )
 
-require gopkg.in/yaml.v3 v3.0.1 // indirect
+require (
+	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+)

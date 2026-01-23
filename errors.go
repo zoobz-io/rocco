@@ -169,9 +169,8 @@ type UnprocessableEntityDetails struct {
 
 // ValidationFieldError represents a single field validation error.
 type ValidationFieldError struct {
-	Field string `json:"field" description:"The field that failed validation"`
-	Tag   string `json:"tag" description:"The validation rule that failed"`
-	Value string `json:"value" description:"The value that failed validation"`
+	Field   string `json:"field" description:"The field that failed validation"`
+	Message string `json:"message" description:"Description of the validation failure"`
 }
 
 // ValidationDetails provides detailed validation errors for request validation.

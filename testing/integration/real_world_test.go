@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/zoobzio/check"
 	"github.com/zoobzio/rocco"
 )
 
@@ -26,17 +27,16 @@ type CreateUserInput struct {
 	Email string `json:"email"`
 }
 
-// realWorldFailingValidator is a test validator that always fails validation.
-type realWorldFailingValidator[In, Out any] struct{}
-
-func (realWorldFailingValidator[In, Out]) ValidateInput(In) error {
-	return rocco.NewValidationError([]rocco.ValidationFieldError{
-		{Field: "name", Tag: "required", Value: ""},
-	})
+// realWorldFailingValidatableInput implements rocco.Validatable and always fails.
+type realWorldFailingValidatableInput struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
-func (realWorldFailingValidator[In, Out]) ValidateOutput(Out) error {
-	return nil
+func (realWorldFailingValidatableInput) Validate() error {
+	return check.All(
+		check.Required("", "name"),
+	)
 }
 
 type UpdateUserInput struct {
@@ -429,15 +429,15 @@ func TestRealWorld_AuthenticationFlow(t *testing.T) {
 func TestRealWorld_ValidationErrors(t *testing.T) {
 	engine := rocco.NewEngine("localhost", 0, nil)
 
-	handler := rocco.NewHandler[CreateUserInput, User](
+	handler := rocco.NewHandler[realWorldFailingValidatableInput, User](
 		"create-user",
 		"POST",
 		"/users",
-		func(_ *rocco.Request[CreateUserInput]) (User, error) {
+		func(_ *rocco.Request[realWorldFailingValidatableInput]) (User, error) {
 			t.Error("handler should not be called on validation error")
 			return User{}, nil
 		},
-	).WithValidator(realWorldFailingValidator[CreateUserInput, User]{})
+	)
 	engine.WithHandlers(handler)
 
 	// Test that validation errors return 422

@@ -2,13 +2,17 @@ package rocco
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/zoobzio/capitan"
+	"github.com/zoobzio/check"
 	"github.com/zoobzio/sentinel"
 )
 
@@ -42,8 +46,9 @@ type Handler[In, Out any] struct {
 	// Error definitions with schemas for OpenAPI generation.
 	errorDefs []ErrorDefinition
 
-	// Validation.
-	validator Validator[In, Out]
+	// Validation flags (checked once at creation time).
+	inputValidatable  bool // True if In implements Validatable.
+	outputValidatable bool // True if Out implements Validatable.
 
 	// Middleware.
 	middleware []func(http.Handler) http.Handler
@@ -113,14 +118,18 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 				return http.StatusUnprocessableEntity, unmarshalErr
 			}
 
-			// Validate input.
-			if inputErr := h.validator.ValidateInput(input); inputErr != nil {
-				capitan.Warn(ctx, RequestValidationInputFailed,
-					HandlerNameKey.Field(h.spec.Name),
-					ErrorKey.Field(inputErr.Error()),
-				)
-				writeValidationErrorResponse(ctx, w, inputErr, h.spec.ContentType, h.spec.Name)
-				return http.StatusUnprocessableEntity, inputErr
+			// Validate input if type implements Validatable.
+			if h.inputValidatable {
+				if v, ok := any(input).(Validatable); ok {
+					if inputErr := v.Validate(); inputErr != nil {
+						capitan.Warn(ctx, RequestValidationInputFailed,
+							HandlerNameKey.Field(h.spec.Name),
+							ErrorKey.Field(inputErr.Error()),
+						)
+						writeValidationErrorResponse(ctx, w, inputErr, h.spec.ContentType, h.spec.Name)
+						return http.StatusUnprocessableEntity, inputErr
+					}
+				}
 			}
 		}
 	}
@@ -179,14 +188,16 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 	}
 
 	// Validate output (opt-in, disabled by default).
-	if h.validateOutput {
-		if validErr := h.validator.ValidateOutput(output); validErr != nil {
-			capitan.Warn(ctx, RequestValidationOutputFailed,
-				HandlerNameKey.Field(h.spec.Name),
-				ErrorKey.Field(validErr.Error()),
-			)
-			writeError(ctx, w, ErrInternalServer.WithCause(fmt.Errorf("output validation failed: %w", validErr)), h.spec.ContentType, h.spec.Name)
-			return http.StatusInternalServerError, fmt.Errorf("output validation failed: %w", validErr)
+	if h.validateOutput && h.outputValidatable {
+		if v, ok := any(output).(Validatable); ok {
+			if validErr := v.Validate(); validErr != nil {
+				capitan.Warn(ctx, RequestValidationOutputFailed,
+					HandlerNameKey.Field(h.spec.Name),
+					ErrorKey.Field(validErr.Error()),
+				)
+				writeError(ctx, w, ErrInternalServer.WithCause(fmt.Errorf("output validation failed: %w", validErr)), h.spec.ContentType, h.spec.Name)
+				return http.StatusInternalServerError, fmt.Errorf("output validation failed: %w", validErr)
+			}
 		}
 	}
 
@@ -240,6 +251,12 @@ func NewHandler[In, Out any](name string, method, path string, fn func(*Request[
 	inputMeta := sentinel.Scan[In]()
 	outputMeta := sentinel.Scan[Out]()
 
+	// Check if input/output types implement Validatable.
+	var zeroIn In
+	var zeroOut Out
+	_, inputValidatable := any(zeroIn).(Validatable)
+	_, outputValidatable := any(zeroOut).(Validatable)
+
 	return &Handler[In, Out]{
 		fn: fn,
 		spec: HandlerSpec{
@@ -259,14 +276,79 @@ func NewHandler[In, Out any](name string, method, path string, fn func(*Request[
 			UsageLimits:    []UsageLimit{},
 			Tags:           []string{},
 		},
-		responseHeaders: make(map[string]string),
-		maxBodySize:     10 * 1024 * 1024, // Default to 10MB.
-		codec:           defaultCodec,
-		InputMeta:       inputMeta,
-		OutputMeta:      outputMeta,
-		validator:       NoOpValidator[In, Out]{},
-		middleware:      make([]func(http.Handler) http.Handler, 0),
+		responseHeaders:   make(map[string]string),
+		maxBodySize:       10 * 1024 * 1024, // Default to 10MB.
+		codec:             defaultCodec,
+		InputMeta:         inputMeta,
+		OutputMeta:        outputMeta,
+		inputValidatable:  inputValidatable,
+		outputValidatable: outputValidatable,
+		middleware:        make([]func(http.Handler) http.Handler, 0),
 	}
+}
+
+// generateHandlerName creates a unique handler name from method and path.
+// Format: "method-path-segments-xxxxxxxx" where xxxxxxxx is 8 random hex chars.
+// Example: GET /users/{id} -> "get-users-id-a3f1b2c4".
+func generateHandlerName(method, path string) string {
+	// Normalise method to lowercase
+	name := strings.ToLower(method)
+
+	// Process path segments
+	path = strings.Trim(path, "/")
+	if path != "" {
+		segments := strings.Split(path, "/")
+		for _, seg := range segments {
+			// Strip braces from path params: {id} -> id
+			seg = strings.TrimPrefix(seg, "{")
+			seg = strings.TrimSuffix(seg, "}")
+			if seg != "" {
+				name += "-" + seg
+			}
+		}
+	}
+
+	// Append 8 random hex chars for uniqueness
+	suffix := make([]byte, 4)
+	if _, err := rand.Read(suffix); err != nil {
+		// Fallback if crypto/rand fails (shouldn't happen)
+		suffix = []byte{0x00, 0x00, 0x00, 0x00}
+	}
+	name += "-" + hex.EncodeToString(suffix)
+
+	return name
+}
+
+// GET creates a handler for GET requests.
+func GET[In, Out any](path string, fn func(*Request[In]) (Out, error)) *Handler[In, Out] {
+	return NewHandler[In, Out](generateHandlerName(http.MethodGet, path), http.MethodGet, path, fn)
+}
+
+// POST creates a handler for POST requests.
+func POST[In, Out any](path string, fn func(*Request[In]) (Out, error)) *Handler[In, Out] {
+	return NewHandler[In, Out](generateHandlerName(http.MethodPost, path), http.MethodPost, path, fn)
+}
+
+// PUT creates a handler for PUT requests.
+func PUT[In, Out any](path string, fn func(*Request[In]) (Out, error)) *Handler[In, Out] {
+	return NewHandler[In, Out](generateHandlerName(http.MethodPut, path), http.MethodPut, path, fn)
+}
+
+// PATCH creates a handler for PATCH requests.
+func PATCH[In, Out any](path string, fn func(*Request[In]) (Out, error)) *Handler[In, Out] {
+	return NewHandler[In, Out](generateHandlerName(http.MethodPatch, path), http.MethodPatch, path, fn)
+}
+
+// DELETE creates a handler for DELETE requests.
+func DELETE[In, Out any](path string, fn func(*Request[In]) (Out, error)) *Handler[In, Out] {
+	return NewHandler[In, Out](generateHandlerName(http.MethodDelete, path), http.MethodDelete, path, fn)
+}
+
+// WithName sets a custom handler name, overriding the auto-generated one.
+// This affects the OpenAPI operationId and log entries.
+func (h *Handler[In, Out]) WithName(name string) *Handler[In, Out] {
+	h.spec.Name = name
+	return h
 }
 
 // WithSummary sets the OpenAPI summary.
@@ -360,12 +442,6 @@ func (h *Handler[In, Out]) applyDefaultCodec(codec Codec) {
 		h.codec = codec
 		h.spec.ContentType = codec.ContentType()
 	}
-}
-
-// WithValidator sets the validator for request/response validation.
-func (h *Handler[In, Out]) WithValidator(v Validator[In, Out]) *Handler[In, Out] {
-	h.validator = v
-	return h
 }
 
 // WithMiddleware adds middleware to this handler and returns the handler for chaining.
@@ -472,7 +548,24 @@ func writeError(ctx context.Context, w http.ResponseWriter, err ErrorDefinition,
 
 // writeValidationErrorResponse writes detailed validation errors using the standard error format.
 func writeValidationErrorResponse(ctx context.Context, w http.ResponseWriter, err error, contentType, handlerName string) {
-	// Extract validation details if available.
+	// Try to extract check.Result field errors first.
+	result := &check.Result{}
+	if errors.As(err, &result) {
+		fieldErrors := check.GetFieldErrors(result)
+		if len(fieldErrors) > 0 {
+			fields := make([]ValidationFieldError, len(fieldErrors))
+			for i, fe := range fieldErrors {
+				fields[i] = ValidationFieldError{
+					Field:   fe.Field,
+					Message: fe.Message,
+				}
+			}
+			writeError(ctx, w, ErrValidationFailed.WithDetails(ValidationDetails{Fields: fields}), contentType, handlerName)
+			return
+		}
+	}
+
+	// Try legacy ValidationDetails for backward compatibility.
 	var details ValidationDetails
 	if errors.As(err, &details) {
 		writeError(ctx, w, ErrValidationFailed.WithDetails(details), contentType, handlerName)
