@@ -6,7 +6,7 @@ toolchain go1.25.5
 
 require (
 	github.com/zoobzio/capitan v1.0.0
-	github.com/zoobzio/check v0.0.2
+	github.com/zoobzio/check v0.0.3
 	github.com/zoobzio/openapi v1.0.0
 	github.com/zoobzio/sentinel v1.0.2
 )

@@ -12,7 +12,7 @@ require (
 )
 
 require (
-	github.com/zoobzio/check v0.0.2 // indirect
+	github.com/zoobzio/check v0.0.3 // indirect
 	github.com/zoobzio/openapi v1.0.0 // indirect
 	github.com/zoobzio/sentinel v1.0.2 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
