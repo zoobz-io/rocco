@@ -38,17 +38,10 @@ type Engine struct {
 	codec               Codec       // Default codec for handlers (nil = use handler default)
 }
 
-// NewEngine creates a new Engine with identity extraction.
-// The extractIdentity function is called for handlers that require authentication.
-// Pass nil for extractIdentity if you don't need authentication.
-func NewEngine(
-	host string,
-	port int,
-	extractIdentity func(context.Context, *http.Request) (Identity, error),
-) *Engine {
+// NewEngine creates a new Engine.
+// Use WithAuthenticator to configure identity extraction for authenticated handlers.
+func NewEngine() *Engine {
 	config := &EngineConfig{
-		Host:         host,
-		Port:         port,
 		ReadTimeout:  120 * time.Second,
 		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -63,27 +56,13 @@ func NewEngine(
 		config:           config,
 		mux:              mux,
 		globalMiddleware: make([]func(http.Handler) http.Handler, 0),
-		extractIdentity:  extractIdentity,
 		ctx:              ctx,
 		cancel:           cancel,
 		spec:             DefaultEngineSpec(),
 	}
 
-	// Create HTTP server
-	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-	e.server = &http.Server{
-		Addr:         addr,
-		Handler:      e.mux,
-		ReadTimeout:  config.ReadTimeout,
-		WriteTimeout: config.WriteTimeout,
-		IdleTimeout:  config.IdleTimeout,
-	}
-
 	// Emit engine created event
-	capitan.Debug(ctx, EngineCreated,
-		HostKey.Field(config.Host),
-		PortKey.Field(config.Port),
-	)
+	capitan.Debug(ctx, EngineCreated)
 
 	return e
 }
@@ -91,6 +70,13 @@ func NewEngine(
 // WithMiddleware adds global middleware to the engine and returns the engine for chaining.
 func (e *Engine) WithMiddleware(middleware ...func(http.Handler) http.Handler) *Engine {
 	e.globalMiddleware = append(e.globalMiddleware, middleware...)
+	return e
+}
+
+// WithAuthenticator sets the identity extraction function for authenticated handlers.
+// The extractor is called for handlers that require authentication (via WithAuthentication).
+func (e *Engine) WithAuthenticator(extractor func(context.Context, *http.Request) (Identity, error)) *Engine {
+	e.extractIdentity = extractor
 	return e
 }
 
@@ -480,14 +466,24 @@ func (*Engine) adaptHandler(handler Endpoint) http.HandlerFunc {
 	}
 }
 
-// Start begins listening for HTTP requests.
+// Start begins listening for HTTP requests on the given host and port.
+// Use an empty string for host to bind to all interfaces.
 // This method blocks until the server is shutdown.
-func (e *Engine) Start() error {
+func (e *Engine) Start(host string, port int) error {
+	addr := fmt.Sprintf("%s:%d", host, port)
+
+	// Create HTTP server
+	e.server = &http.Server{
+		Addr:         addr,
+		Handler:      e.mux,
+		ReadTimeout:  e.config.ReadTimeout,
+		WriteTimeout: e.config.WriteTimeout,
+		IdleTimeout:  e.config.IdleTimeout,
+	}
+
 	// Emit engine starting event
 	capitan.Info(e.ctx, EngineStarting,
-		HostKey.Field(e.config.Host),
-		PortKey.Field(e.config.Port),
-		AddressKey.Field(e.server.Addr),
+		AddressKey.Field(addr),
 	)
 
 	err := e.server.ListenAndServe()

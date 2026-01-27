@@ -73,7 +73,7 @@ type UserOutput struct {
 }
 
 func main() {
-    engine := rocco.NewEngine("", 8080, nil)
+    engine := rocco.NewEngine()
 
     // Configure OpenAPI metadata
     engine.WithOpenAPIInfo(openapi.Info{
@@ -100,7 +100,7 @@ func main() {
 
     // OpenAPI spec at /openapi, interactive docs at /docs
     fmt.Println("Server listening on :8080")
-    engine.Start()
+    engine.Start(rocco.HostAll, 8080)
 }
 ```
 

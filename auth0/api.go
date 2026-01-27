@@ -5,7 +5,7 @@
 //
 // # Basic Usage
 //
-// Create an extractor and pass it to rocco.NewEngine:
+// Create an extractor and configure rocco.Engine:
 //
 //	extractor, err := auth0.NewExtractor(auth0.Config{
 //	    Domain:   "your-tenant.auth0.com",
@@ -15,7 +15,7 @@
 //	    log.Fatal(err)
 //	}
 //
-//	engine := rocco.NewEngine("", 8080, extractor)
+//	engine := rocco.NewEngine().WithAuthenticator(extractor)
 //
 // # Advanced Usage
 //
@@ -31,7 +31,7 @@
 //	    log.Fatal(err)
 //	}
 //
-//	engine := rocco.NewEngine("", 8080, validator.Extractor())
+//	engine := rocco.NewEngine().WithAuthenticator(validator.Extractor())
 package auth0
 
 import (

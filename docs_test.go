@@ -1001,7 +1001,7 @@ func TestParseEnum_InvalidNumbers(t *testing.T) {
 
 // TestGenerateOpenAPI_Filtering tests that GenerateOpenAPI filters handlers based on identity permissions
 func TestGenerateOpenAPI_Filtering(t *testing.T) {
-	engine := NewEngine("localhost", 8080, nil)
+	engine := NewEngine()
 
 	publicHandler := NewHandler[NoBody, testOutput](
 		"public",
@@ -1083,7 +1083,7 @@ func TestGenerateOpenAPI_Filtering(t *testing.T) {
 
 // TestGenerateOpenAPI_WithTags tests engine-level tag descriptions
 func TestGenerateOpenAPI_WithTags(t *testing.T) {
-	engine := NewEngine("localhost", 8080, nil)
+	engine := NewEngine()
 	engine.WithTag("users", "User management endpoints")
 	engine.WithTag("posts", "Blog post endpoints")
 

@@ -91,7 +91,7 @@ Rocco does not handle TLS directly. In production, use one of these approaches:
 
 ```go
 // Example: Using behind nginx/Caddy that handles TLS
-engine := rocco.NewEngine("127.0.0.1", 8080, extractIdentity)
+engine := rocco.NewEngine().WithAuthenticator(extractIdentity)
 // nginx forwards https://api.example.com -> http://127.0.0.1:8080
 ```
 
@@ -102,7 +102,7 @@ Rocco doesn't include CORS middleware. Use Chi's cors middleware:
 ```go
 import "github.com/go-chi/cors"
 
-engine := rocco.NewEngine("localhost", 8080, nil)
+engine := rocco.NewEngine()
 engine.WithMiddleware(cors.Handler(cors.Options{
     AllowedOrigins:   []string{"https://example.com"},
     AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
