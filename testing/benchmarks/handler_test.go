@@ -43,7 +43,7 @@ type complexOutput struct {
 
 // newBenchmarkEngine creates a clean engine for benchmarks.
 func newBenchmarkEngine() *rocco.Engine {
-	return rocco.NewEngine("localhost", 0, nil)
+	return rocco.NewEngine()
 }
 
 // BenchmarkHandler_NoBody benchmarks handlers with no request body.

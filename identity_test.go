@@ -51,7 +51,7 @@ func TestAuthz_WithScopes_SingleGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+			engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 				return &testIdentity{scopes: tt.userScopes}, nil
 			})
 
@@ -127,7 +127,7 @@ func TestAuthz_WithScopes_MultipleGroups(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+			engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 				return &testIdentity{scopes: tt.userScopes}, nil
 			})
 
@@ -197,7 +197,7 @@ func TestAuthz_WithRoles_SingleGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+			engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 				return &testIdentity{roles: tt.userRoles}, nil
 			})
 
@@ -273,7 +273,7 @@ func TestAuthz_WithRoles_MultipleGroups(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+			engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 				return &testIdentity{roles: tt.userRoles}, nil
 			})
 
@@ -347,7 +347,7 @@ func TestAuthz_WithScopesAndRoles(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+			engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 				return &testIdentity{
 					scopes: tt.userScopes,
 					roles:  tt.userRoles,
@@ -416,7 +416,7 @@ func TestAuthz_NoIdentityInContext(t *testing.T) {
 	setupSyncMode(t)
 
 	// Create engine with extractIdentity that doesn't add identity to context
-	engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 		return &testIdentity{scopes: []string{"read"}}, nil
 	})
 
@@ -547,7 +547,7 @@ func (i *testIdentity) Stats() map[string]int {
 func TestUsageLimit_BelowThreshold(t *testing.T) {
 	setupSyncMode(t)
 
-	engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 		return &testIdentity{
 			stats: map[string]int{
 				"requests_today": 50,
@@ -579,7 +579,7 @@ func TestUsageLimit_BelowThreshold(t *testing.T) {
 func TestUsageLimit_AtThreshold(t *testing.T) {
 	setupSyncMode(t)
 
-	engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 		return &testIdentity{
 			stats: map[string]int{
 				"requests_today": 100,
@@ -611,7 +611,7 @@ func TestUsageLimit_AtThreshold(t *testing.T) {
 func TestUsageLimit_AboveThreshold(t *testing.T) {
 	setupSyncMode(t)
 
-	engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 		return &testIdentity{
 			stats: map[string]int{
 				"requests_today": 150,
@@ -684,7 +684,7 @@ func TestUsageLimit_MultipleLimits(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+			engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 				return &testIdentity{stats: tt.stats}, nil
 			})
 
@@ -714,7 +714,7 @@ func TestUsageLimit_MultipleLimits(t *testing.T) {
 func TestUsageLimit_MissingStatKey(t *testing.T) {
 	setupSyncMode(t)
 
-	engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 		return &testIdentity{
 			stats: map[string]int{
 				"other_metric": 100,
@@ -805,7 +805,7 @@ func TestUsageLimit_DynamicThreshold(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+			engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 				return &testIdentity{
 					tenantID: tt.tenantID,
 					stats: map[string]int{

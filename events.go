@@ -5,11 +5,11 @@ import "github.com/zoobzio/capitan"
 // Engine lifecycle signals.
 var (
 	// EngineCreated is emitted when an Engine instance is created.
-	// Fields: HostKey, PortKey.
-	EngineCreated = capitan.NewSignal("http.engine.created", "HTTP engine instance created with configured host and port")
+	// Fields: none.
+	EngineCreated = capitan.NewSignal("http.engine.created", "HTTP engine instance created")
 
 	// EngineStarting is emitted when the server starts listening for requests.
-	// Fields: HostKey, PortKey, AddressKey.
+	// Fields: AddressKey.
 	EngineStarting = capitan.NewSignal("http.engine.starting", "HTTP server starting to listen for requests on configured address")
 
 	// EngineShutdownStarted is emitted when graceful shutdown is initiated.
@@ -161,8 +161,6 @@ var (
 // Event field keys (primitive types only).
 var (
 	// Engine fields.
-	HostKey    = capitan.NewStringKey("host")
-	PortKey    = capitan.NewIntKey("port")
 	AddressKey = capitan.NewStringKey("address")
 
 	// Request/Response fields.

@@ -55,26 +55,16 @@ func TestEvents_EngineCreated(t *testing.T) {
 	setupSyncMode(t)
 
 	var received bool
-	var host string
-	var port int
 
-	listener := capitan.Hook(EngineCreated, func(_ context.Context, e *capitan.Event) {
+	listener := capitan.Hook(EngineCreated, func(_ context.Context, _ *capitan.Event) {
 		received = true
-		host, _ = HostKey.From(e)
-		port, _ = PortKey.From(e)
 	})
 	defer listener.Close()
 
-	_ = NewEngine("localhost", 9000, nil)
+	_ = NewEngine()
 
 	if !received {
 		t.Error("EngineCreated not emitted")
-	}
-	if host != "localhost" {
-		t.Errorf("expected host 'localhost', got %q", host)
-	}
-	if port != 9000 {
-		t.Errorf("expected port 9000, got %d", port)
 	}
 }
 
@@ -511,11 +501,11 @@ func TestEvents_EngineShutdown(t *testing.T) {
 	})
 	defer listener2.Close()
 
-	engine := NewEngine("localhost", 0, nil) // Random port
+	engine := NewEngine()
 
-	// Start server in background
+	// Start server in background on random port
 	go func() {
-		_ = engine.Start()
+		_ = engine.Start(HostLocal, 0)
 	}()
 
 	// Give server time to start

@@ -15,13 +15,13 @@
 //
 // # Creating an Engine
 //
-// Create an engine with host, port, and optional identity extraction:
+// Create an engine:
 //
-//	engine := rocco.NewEngine("", 8080, nil)
+//	engine := rocco.NewEngine()
 //
-// For authenticated APIs, provide an identity extractor:
+// For authenticated APIs, configure an identity extractor:
 //
-//	engine := rocco.NewEngine("", 8080, func(ctx context.Context, r *http.Request) (rocco.Identity, error) {
+//	engine := rocco.NewEngine().WithAuthenticator(func(ctx context.Context, r *http.Request) (rocco.Identity, error) {
 //	    // Extract identity from request (e.g., JWT token)
 //	    return identity, nil
 //	})

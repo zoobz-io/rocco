@@ -125,7 +125,7 @@ func (s *userStore) List() []*User {
 // TestRealWorld_CRUDOperations tests a complete CRUD workflow.
 func TestRealWorld_CRUDOperations(t *testing.T) {
 	store := newUserStore()
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	// Create handler
 	createHandler := rocco.NewHandler[CreateUserInput, User](
@@ -320,7 +320,7 @@ func TestRealWorld_AuthenticationFlow(t *testing.T) {
 		"token-user":  {id: "user-1", roles: []string{"user"}},
 	}
 
-	engine := rocco.NewEngine("localhost", 0, func(_ context.Context, r *http.Request) (rocco.Identity, error) {
+	engine := rocco.NewEngine().WithAuthenticator(func(_ context.Context, r *http.Request) (rocco.Identity, error) {
 		token := r.Header.Get("Authorization")
 		if identity, ok := validTokens[token]; ok {
 			return identity, nil
@@ -427,7 +427,7 @@ func TestRealWorld_AuthenticationFlow(t *testing.T) {
 
 // TestRealWorld_ValidationErrors tests validation error handling.
 func TestRealWorld_ValidationErrors(t *testing.T) {
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	handler := rocco.NewHandler[realWorldFailingValidatableInput, User](
 		"create-user",
@@ -460,7 +460,7 @@ func TestRealWorld_ValidationErrors(t *testing.T) {
 
 // TestRealWorld_ErrorResponses tests structured error responses.
 func TestRealWorld_ErrorResponses(t *testing.T) {
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	handler := rocco.NewHandler[rocco.NoBody, idOutput](
 		"error-types",
@@ -527,7 +527,7 @@ func TestRealWorld_MiddlewareChain(t *testing.T) {
 		mu.Unlock()
 	}
 
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	// Logging middleware (engine level)
 	engine.WithMiddleware(func(next http.Handler) http.Handler {
@@ -599,7 +599,7 @@ func TestRealWorld_QueryParameters(t *testing.T) {
 		Offset string `json:"offset"`
 	}
 
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 	handler := rocco.NewHandler[rocco.NoBody, searchOutput](
 		"search",
 		"GET",

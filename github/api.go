@@ -5,14 +5,14 @@
 //
 // # Basic Usage
 //
-// Create an extractor and pass it to rocco.NewEngine:
+// Create an extractor and configure rocco.Engine:
 //
 //	extractor, err := github.NewExtractor(github.Config{})
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
 //
-//	engine := rocco.NewEngine("", 8080, extractor)
+//	engine := rocco.NewEngine().WithAuthenticator(extractor)
 //
 // # Restricting Access by Organization
 //

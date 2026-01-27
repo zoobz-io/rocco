@@ -15,37 +15,31 @@ import (
 
 // newTestEngine creates an engine for testing without authentication.
 func newTestEngine() *Engine {
-	return NewEngine("localhost", 8080, nil)
+	return NewEngine()
 }
 
 func TestNewEngine(t *testing.T) {
-	engine := NewEngine("localhost", 8080, nil)
+	engine := NewEngine()
 
 	if engine == nil {
 		t.Fatal("expected engine, got nil")
 	}
-	if engine.config.Host != "localhost" {
-		t.Errorf("expected host 'localhost', got %s", engine.config.Host)
-	}
-	if engine.config.Port != 8080 {
-		t.Errorf("expected port 8080, got %d", engine.config.Port)
-	}
-	if engine.server == nil {
-		t.Error("HTTP server not initialized")
+	if engine.config == nil {
+		t.Error("config not initialized")
 	}
 	if engine.mux == nil {
-		t.Error("Chi router not initialized")
+		t.Error("mux not initialized")
 	}
 }
 
-func TestNewEngine_NilConfig(t *testing.T) {
+func TestNewEngine_DefaultConfig(t *testing.T) {
 	engine := newTestEngine()
 
 	if engine == nil {
 		t.Fatal("expected engine, got nil")
 	}
-	if engine.config.Port != 8080 {
-		t.Errorf("expected default port 8080, got %d", engine.config.Port)
+	if engine.config.ReadTimeout == 0 {
+		t.Error("expected ReadTimeout to be set")
 	}
 }
 
@@ -193,12 +187,12 @@ func TestEngine_RegisterOpenAPIHandler(t *testing.T) {
 }
 
 func TestEngine_Shutdown(t *testing.T) {
-	engine := NewEngine("localhost", 0, nil) // Use random port
+	engine := NewEngine()
 
-	// Start server in background
+	// Start server in background on random port
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- engine.Start()
+		serverErr <- engine.Start(HostLocal, 0)
 	}()
 
 	// Give server time to start
@@ -619,7 +613,7 @@ func TestEngine_DefaultHandlers_Docs(t *testing.T) {
 
 func TestEngine_AuthMiddleware_Success(t *testing.T) {
 	// Create engine with auth extractor
-	engine := NewEngine("localhost", 8080, func(_ context.Context, r *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, r *http.Request) (Identity, error) {
 		// Extract token from header
 		token := r.Header.Get("Authorization")
 		if token == "Bearer valid-token" {
@@ -657,7 +651,7 @@ func TestEngine_AuthMiddleware_Success(t *testing.T) {
 }
 
 func TestEngine_AuthMiddleware_Failure(t *testing.T) {
-	engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 		return nil, errors.New("authentication failed")
 	})
 
@@ -685,7 +679,7 @@ func TestEngine_AuthMiddleware_Failure(t *testing.T) {
 
 func TestEngine_AuthzMiddleware_InsufficientScope(t *testing.T) {
 	// Engine with auth that returns identity without required scope
-	engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 		return &testIdentity{
 			id:       "user-1",
 			tenantID: "tenant-1",
@@ -714,7 +708,7 @@ func TestEngine_AuthzMiddleware_InsufficientScope(t *testing.T) {
 }
 
 func TestEngine_AuthzMiddleware_InsufficientRole(t *testing.T) {
-	engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 		return &testIdentity{
 			id:       "user-1",
 			tenantID: "tenant-1",
@@ -745,7 +739,7 @@ func TestEngine_AuthzMiddleware_InsufficientRole(t *testing.T) {
 // Tests for usage limit middleware edge cases
 
 func TestEngine_UsageLimitMiddleware_LimitExceeded(t *testing.T) {
-	engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 		return &testIdentity{
 			id:       "user-1",
 			tenantID: "tenant-1",
@@ -774,7 +768,7 @@ func TestEngine_UsageLimitMiddleware_LimitExceeded(t *testing.T) {
 }
 
 func TestEngine_UsageLimitMiddleware_NilStats(t *testing.T) {
-	engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 		return &testIdentity{
 			id:       "user-1",
 			tenantID: "tenant-1",
@@ -804,7 +798,7 @@ func TestEngine_UsageLimitMiddleware_NilStats(t *testing.T) {
 }
 
 func TestEngine_UsageLimitMiddleware_MissingStatKey(t *testing.T) {
-	engine := NewEngine("localhost", 8080, func(_ context.Context, _ *http.Request) (Identity, error) {
+	engine := NewEngine().WithAuthenticator(func(_ context.Context, _ *http.Request) (Identity, error) {
 		return &testIdentity{
 			id:       "user-1",
 			tenantID: "tenant-1",
@@ -989,7 +983,7 @@ func TestEngine_WithCodec_HandlerOverride(t *testing.T) {
 func TestEngine_AuthorizationMiddleware_NoIdentityInContext(t *testing.T) {
 	// Create a handler with scope requirements but bypass auth middleware
 	// by directly invoking authorization middleware with empty context.
-	engine := NewEngine("localhost", 8080, nil)
+	engine := NewEngine()
 
 	handler := NewHandler[NoBody, testOutput](
 		"scoped",
@@ -1026,7 +1020,7 @@ func TestEngine_AuthorizationMiddleware_NoIdentityInContext(t *testing.T) {
 }
 
 func TestEngine_AuthorizationMiddleware_InvalidIdentityType(t *testing.T) {
-	engine := NewEngine("localhost", 8080, nil)
+	engine := NewEngine()
 
 	handler := NewHandler[NoBody, testOutput](
 		"scoped",
@@ -1065,7 +1059,7 @@ func TestEngine_AuthorizationMiddleware_InvalidIdentityType(t *testing.T) {
 // Tests for usage limit middleware edge cases
 
 func TestEngine_UsageLimitMiddleware_NoIdentityInContext(t *testing.T) {
-	engine := NewEngine("localhost", 8080, nil)
+	engine := NewEngine()
 
 	handler := NewHandler[NoBody, testOutput](
 		"limited",
@@ -1099,7 +1093,7 @@ func TestEngine_UsageLimitMiddleware_NoIdentityInContext(t *testing.T) {
 }
 
 func TestEngine_UsageLimitMiddleware_InvalidIdentityType(t *testing.T) {
-	engine := NewEngine("localhost", 8080, nil)
+	engine := NewEngine()
 
 	handler := NewHandler[NoBody, testOutput](
 		"limited",

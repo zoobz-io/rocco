@@ -110,12 +110,12 @@ func (b *RequestBuilder) Build() *http.Request {
 
 // TestEngine creates a pre-configured engine for testing.
 func TestEngine() *rocco.Engine {
-	return rocco.NewEngine("localhost", 0, nil)
+	return rocco.NewEngine()
 }
 
 // TestEngineWithAuth creates an engine with a mock identity extractor.
 func TestEngineWithAuth(extractor func(context.Context, *http.Request) (rocco.Identity, error)) *rocco.Engine {
-	return rocco.NewEngine("localhost", 0, extractor)
+	return rocco.NewEngine().WithAuthenticator(extractor)
 }
 
 // ServeRequest is a convenience function that executes a request against an engine.

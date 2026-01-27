@@ -27,7 +27,7 @@ func newFlushRecorder() *flushRecorder {
 func (f *flushRecorder) Flush() {}
 
 func BenchmarkStreamHandler_EventThroughput(b *testing.B) {
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	handler := rocco.NewStreamHandler[rocco.NoBody, benchStreamEvent](
 		"bench-stream",
@@ -60,7 +60,7 @@ func BenchmarkStreamHandler_EventThroughput(b *testing.B) {
 }
 
 func BenchmarkStreamHandler_ConnectionSetup(b *testing.B) {
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	handler := rocco.NewStreamHandler[rocco.NoBody, benchStreamEvent](
 		"bench-stream",
@@ -86,7 +86,7 @@ func BenchmarkStreamHandler_ConnectionSetup(b *testing.B) {
 }
 
 func BenchmarkStreamHandler_NamedEvents(b *testing.B) {
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	handler := rocco.NewStreamHandler[rocco.NoBody, benchStreamEvent](
 		"bench-stream",
@@ -124,7 +124,7 @@ func BenchmarkStreamHandler_VsHandler(b *testing.B) {
 	}
 
 	// Create equivalent handler and stream handler
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	// Regular handler returns all items at once
 	regularHandler := rocco.NewHandler[rocco.NoBody, benchOutput](
@@ -188,7 +188,7 @@ func BenchmarkStreamHandler_EventSizes(b *testing.B) {
 		Data    string `json:"data"`
 	}
 
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	smallHandler := rocco.NewStreamHandler[rocco.NoBody, smallEvent](
 		"small-stream",

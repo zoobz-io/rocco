@@ -25,7 +25,7 @@ type idOutput struct {
 
 // TestConcurrency_ParallelRequests tests handling many concurrent requests.
 func TestConcurrency_ParallelRequests(t *testing.T) {
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	var counter int64
 	handler := rocco.NewHandler[rocco.NoBody, counterOutput](
@@ -84,7 +84,7 @@ func TestConcurrency_ParallelRequests(t *testing.T) {
 
 // TestConcurrency_DifferentHandlers tests concurrent requests to different handlers.
 func TestConcurrency_DifferentHandlers(t *testing.T) {
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	// Register multiple handlers
 	for i := 0; i < 10; i++ {
@@ -145,7 +145,7 @@ func TestConcurrency_DifferentHandlers(t *testing.T) {
 
 // TestConcurrency_WithMiddleware tests concurrent requests with middleware.
 func TestConcurrency_WithMiddleware(t *testing.T) {
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	var middlewareCount int64
 	middleware := func(next http.Handler) http.Handler {
@@ -189,7 +189,7 @@ func TestConcurrency_WithMiddleware(t *testing.T) {
 // TestConcurrency_WithAuthentication tests concurrent authenticated requests.
 func TestConcurrency_WithAuthentication(t *testing.T) {
 	var authCount int64
-	engine := rocco.NewEngine("localhost", 0, func(_ context.Context, r *http.Request) (rocco.Identity, error) {
+	engine := rocco.NewEngine().WithAuthenticator(func(_ context.Context, r *http.Request) (rocco.Identity, error) {
 		atomic.AddInt64(&authCount, 1)
 		token := r.Header.Get("Authorization")
 		if token == "" {
@@ -249,7 +249,7 @@ func TestConcurrency_WithAuthentication(t *testing.T) {
 
 // TestConcurrency_ErrorHandling tests concurrent requests that return errors.
 func TestConcurrency_ErrorHandling(t *testing.T) {
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	var counter int64
 	handler := rocco.NewHandler[rocco.NoBody, idOutput](
@@ -306,7 +306,7 @@ func TestConcurrency_BodyParsing(t *testing.T) {
 		Echo string `json:"echo"`
 	}
 
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 	handler := rocco.NewHandler[echoInput, echoOutput](
 		"echo",
 		"POST",
@@ -355,7 +355,7 @@ func TestConcurrency_BodyParsing(t *testing.T) {
 
 // TestConcurrency_SlowHandlers tests concurrent slow handlers.
 func TestConcurrency_SlowHandlers(t *testing.T) {
-	engine := rocco.NewEngine("localhost", 0, nil)
+	engine := rocco.NewEngine()
 
 	handler := rocco.NewHandler[rocco.NoBody, idOutput](
 		"slow",
