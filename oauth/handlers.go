@@ -67,22 +67,22 @@ func NewLoginHandler(path string, cfg Config) (*rocco.Handler[rocco.NoBody, rocc
 //
 // The respond function determines what is returned to the client. Common patterns:
 //
-//   - Redirect to dashboard: func(t *TokenResponse) (rocco.Redirect, error) { return rocco.Redirect{URL: "/dashboard"}, nil }
-//   - Return JSON: func(t *TokenResponse) (MyResponse, error) { return MyResponse{Token: t.AccessToken}, nil }
+//   - Redirect to dashboard: func(ctx context.Context, t *TokenResponse) (rocco.Redirect, error) { return rocco.Redirect{URL: "/dashboard"}, nil }
+//   - Return JSON: func(ctx context.Context, t *TokenResponse) (MyResponse, error) { return MyResponse{Token: t.AccessToken}, nil }
 //
 // Returns an error if the config is invalid (missing required fields or callbacks).
 //
 // Example:
 //
 //	callback, err := oauth.NewCallbackHandler("/auth/github/callback", cfg,
-//	    func(tokens *oauth.TokenResponse) (rocco.Redirect, error) {
+//	    func(ctx context.Context, tokens *oauth.TokenResponse) (rocco.Redirect, error) {
 //	        return rocco.Redirect{URL: "/dashboard"}, nil
 //	    })
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
 //	engine.WithHandlers(callback)
-func NewCallbackHandler[Out any](path string, cfg Config, respond func(*TokenResponse) (Out, error)) (*rocco.Handler[rocco.NoBody, Out], error) {
+func NewCallbackHandler[Out any](path string, cfg Config, respond func(context.Context, *TokenResponse) (Out, error)) (*rocco.Handler[rocco.NoBody, Out], error) {
 	cfg.defaults()
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("oauth: invalid config: %w", err)
@@ -134,7 +134,7 @@ func NewCallbackHandler[Out any](path string, cfg Config, respond func(*TokenRes
 		}
 
 		// Return response via user-provided function
-		return respond(tokens)
+		return respond(req.Context, tokens)
 	}).
 		WithName(cfg.Name + "-callback").
 		WithSummary("Handle " + cfg.Name + " OAuth callback").

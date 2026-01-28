@@ -100,7 +100,7 @@ func TestNewCallbackHandler_ProviderError(t *testing.T) {
 		OnSuccess:   func(ctx context.Context, tokens *TokenResponse) error { return nil },
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (rocco.Redirect, error) {
+	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
 		return rocco.Redirect{URL: "/dashboard"}, nil
 	})
 	if err != nil {
@@ -165,7 +165,7 @@ func TestNewCallbackHandler_TokenExchangeFailure(t *testing.T) {
 		OnSuccess:   func(ctx context.Context, tokens *TokenResponse) error { return nil },
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (rocco.Redirect, error) {
+	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
 		return rocco.Redirect{URL: "/dashboard"}, nil
 	})
 	if err != nil {
@@ -204,7 +204,7 @@ func TestNewCallbackHandler_InvalidJSONResponse(t *testing.T) {
 		OnSuccess:   func(ctx context.Context, tokens *TokenResponse) error { return nil },
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (rocco.Redirect, error) {
+	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
 		return rocco.Redirect{URL: "/dashboard"}, nil
 	})
 	if err != nil {
@@ -247,7 +247,7 @@ func TestNewCallbackHandler_OnSuccessFailure(t *testing.T) {
 		},
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (rocco.Redirect, error) {
+	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
 		return rocco.Redirect{URL: "/dashboard"}, nil
 	})
 	if err != nil {
@@ -281,7 +281,7 @@ func TestNewCallbackHandler_StateVerificationError(t *testing.T) {
 		OnSuccess: func(ctx context.Context, tokens *TokenResponse) error { return nil },
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (rocco.Redirect, error) {
+	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
 		return rocco.Redirect{URL: "/dashboard"}, nil
 	})
 	if err != nil {
@@ -322,7 +322,7 @@ func TestNewCallbackHandler_RespondError(t *testing.T) {
 		OnSuccess:   func(ctx context.Context, tokens *TokenResponse) error { return nil },
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (rocco.Redirect, error) {
+	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
 		return rocco.Redirect{}, rocco.ErrInternalServer.WithMessage("respond failed")
 	})
 	if err != nil {
@@ -458,7 +458,7 @@ func TestNewCallbackHandler_ProviderErrorWithoutDescription(t *testing.T) {
 		OnSuccess:   func(ctx context.Context, tokens *TokenResponse) error { return nil },
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (rocco.Redirect, error) {
+	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
 		return rocco.Redirect{URL: "/dashboard"}, nil
 	})
 	if err != nil {

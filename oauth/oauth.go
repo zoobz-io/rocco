@@ -20,7 +20,7 @@
 //
 //	login := oauth.NewLoginHandler("/auth/github", cfg)
 //	callback := oauth.NewCallbackHandler("/auth/github/callback", cfg,
-//	    func(tokens *oauth.TokenResponse) (rocco.Redirect, error) {
+//	    func(ctx context.Context, tokens *oauth.TokenResponse) (rocco.Redirect, error) {
 //	        return rocco.Redirect{URL: "/dashboard"}, nil
 //	    })
 //
