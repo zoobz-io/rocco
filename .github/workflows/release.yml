@@ -38,11 +38,11 @@ jobs:
         run: |
           go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
-      - name: Install linter
-        run: make install-tools
-
       - name: Run linting
-        run: make lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.7.2
+          args: --config=.golangci.yml --timeout=5m
 
   # Create release when tag is pushed
   release:

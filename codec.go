@@ -2,6 +2,9 @@ package rocco
 
 import "encoding/json"
 
+// ContentTypeJSON is the MIME type for JSON content.
+const ContentTypeJSON = "application/json"
+
 // Codec defines the interface for request/response serialization.
 // Implementations handle marshaling and unmarshaling of handler payloads.
 type Codec interface {
@@ -18,7 +21,7 @@ type JSONCodec struct{}
 
 // ContentType returns "application/json".
 func (JSONCodec) ContentType() string {
-	return "application/json"
+	return ContentTypeJSON
 }
 
 // Marshal encodes v as JSON.

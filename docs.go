@@ -721,7 +721,7 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 
 			contentType := handlerSpec.ContentType
 			if contentType == "" {
-				contentType = "application/json"
+				contentType = ContentTypeJSON
 			}
 			operation.RequestBody = &openapi.RequestBody{
 				Required: true,
@@ -756,7 +756,7 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 			// Standard response
 			responseContentType := handlerSpec.ContentType
 			if responseContentType == "" {
-				responseContentType = "application/json"
+				responseContentType = ContentTypeJSON
 			}
 			operation.Responses[fmt.Sprintf("%d", handlerSpec.SuccessStatus)] = openapi.Response{
 				Description: "Success",
@@ -774,7 +774,7 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 			operation.Responses[fmt.Sprintf("%d", errDef.Status())] = openapi.Response{
 				Description: statusCodeToResponseName(errDef.Status()),
 				Content: map[string]openapi.MediaType{
-					"application/json": {
+					ContentTypeJSON: {
 						Schema: &openapi.Schema{Ref: "#/components/schemas/" + schemaName},
 					},
 				},
@@ -797,7 +797,7 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 			operation.Responses["401"] = openapi.Response{
 				Description: "Unauthorized",
 				Content: map[string]openapi.MediaType{
-					"application/json": {
+					ContentTypeJSON: {
 						Schema: &openapi.Schema{Ref: "#/components/schemas/ErrorResponse"},
 					},
 				},
@@ -808,7 +808,7 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 				operation.Responses["403"] = openapi.Response{
 					Description: "Forbidden - insufficient permissions",
 					Content: map[string]openapi.MediaType{
-						"application/json": {
+						ContentTypeJSON: {
 							Schema: &openapi.Schema{Ref: "#/components/schemas/ErrorResponse"},
 						},
 					},
