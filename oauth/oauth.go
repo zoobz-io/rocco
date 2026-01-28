@@ -1,43 +1,42 @@
-// Package oauth provides OAuth 2.0 authentication handlers for rocco-based APIs.
+// Package oauth provides OAuth 2.0 protocol functions for the authorization code flow.
 //
-// This package provides login and callback handlers that implement the OAuth 2.0
-// authorization code flow. It is provider-agnostic and works with any OAuth 2.0
-// compliant provider (GitHub, Google, Auth0, etc.).
+// This package is provider-agnostic and handles the protocol mechanics:
+// building authorization URLs, exchanging codes for tokens, and refreshing tokens.
+// It does not handle HTTP handlers, sessions, or cookies — those belong in higher-level packages.
 //
 // # Basic Usage
-//
-// Configure the OAuth flow and create handlers:
 //
 //	cfg := oauth.GitHub()
 //	cfg.ClientID = os.Getenv("GITHUB_CLIENT_ID")
 //	cfg.ClientSecret = os.Getenv("GITHUB_CLIENT_SECRET")
 //	cfg.RedirectURI = "https://myapp.com/auth/callback"
-//	cfg.GenerateState = myapp.GenerateState
-//	cfg.VerifyState = myapp.VerifyState
-//	cfg.OnSuccess = func(ctx context.Context, tokens *oauth.TokenResponse) error {
-//	    return db.StoreTokens(ctx, tokens)
-//	}
 //
-//	login := oauth.NewLoginHandler("/auth/github", cfg)
-//	callback := oauth.NewCallbackHandler("/auth/github/callback", cfg,
-//	    func(ctx context.Context, tokens *oauth.TokenResponse) (rocco.Redirect, error) {
-//	        return rocco.Redirect{URL: "/dashboard"}, nil
-//	    })
+//	// Build the authorization URL for redirecting users to the provider.
+//	authURL, err := oauth.AuthURL(cfg, state)
 //
-//	engine.WithHandlers(login, callback)
+//	// Exchange the authorization code for tokens after the provider redirects back.
+//	tokens, err := oauth.Exchange(ctx, cfg, code)
+//
+//	// Refresh an expired access token.
+//	newTokens, err := oauth.Refresh(ctx, cfg, refreshToken)
 package oauth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
-// Config defines OAuth 2.0 settings and application callbacks.
+// Config defines OAuth 2.0 provider configuration and application credentials.
 type Config struct {
 	// Provider endpoints
-	Name     string // Provider name for errors/logging (e.g., "github")
+	Name     string // Provider name for logging (e.g., "github")
 	AuthURL  string // Authorization endpoint (e.g., "https://github.com/login/oauth/authorize")
 	TokenURL string // Token exchange endpoint (e.g., "https://github.com/login/oauth/access_token")
 
@@ -46,20 +45,6 @@ type Config struct {
 	ClientSecret string
 	RedirectURI  string
 	Scopes       []string
-
-	// Application callbacks (required)
-	//
-	// GenerateState creates a random state parameter for CSRF protection.
-	// The state should be stored (e.g., in session) for verification in the callback.
-	GenerateState func(ctx context.Context) (string, error)
-
-	// VerifyState checks that the state parameter matches what was generated.
-	// Returns true if valid, false if invalid or expired.
-	VerifyState func(ctx context.Context, state string) (bool, error)
-
-	// OnSuccess is called after successful token exchange.
-	// Use this to store tokens, create sessions, etc.
-	OnSuccess func(ctx context.Context, tokens *TokenResponse) error
 
 	// Optional settings
 	HTTPClient *http.Client // Default: 10s timeout client
@@ -72,8 +57,8 @@ func (c *Config) defaults() {
 	}
 }
 
-// validate returns an error if required fields are missing.
-func (c *Config) validate() error {
+// Validate returns an error if required fields are missing.
+func (c *Config) Validate() error {
 	if c.AuthURL == "" {
 		return errors.New("oauth: AuthURL is required")
 	}
@@ -89,15 +74,6 @@ func (c *Config) validate() error {
 	if c.RedirectURI == "" {
 		return errors.New("oauth: RedirectURI is required")
 	}
-	if c.GenerateState == nil {
-		return errors.New("oauth: GenerateState callback is required")
-	}
-	if c.VerifyState == nil {
-		return errors.New("oauth: VerifyState callback is required")
-	}
-	if c.OnSuccess == nil {
-		return errors.New("oauth: OnSuccess callback is required")
-	}
 	return nil
 }
 
@@ -110,8 +86,58 @@ type TokenResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
+// AuthURL constructs the OAuth authorization URL with the given state parameter.
+func AuthURL(cfg Config, state string) (string, error) {
+	u, err := url.Parse(cfg.AuthURL)
+	if err != nil {
+		return "", fmt.Errorf("oauth: invalid AuthURL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("client_id", cfg.ClientID)
+	q.Set("redirect_uri", cfg.RedirectURI)
+	q.Set("state", state)
+	q.Set("response_type", "code")
+
+	if len(cfg.Scopes) > 0 {
+		q.Set("scope", strings.Join(cfg.Scopes, " "))
+	}
+
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+// Exchange trades an authorization code for access and refresh tokens.
+func Exchange(ctx context.Context, cfg Config, code string) (*TokenResponse, error) {
+	cfg.defaults()
+
+	data := url.Values{
+		"client_id":     {cfg.ClientID},
+		"client_secret": {cfg.ClientSecret},
+		"code":          {code},
+		"redirect_uri":  {cfg.RedirectURI},
+		"grant_type":    {"authorization_code"},
+	}
+
+	return doTokenRequest(ctx, cfg, data)
+}
+
+// Refresh exchanges a refresh token for new access and refresh tokens.
+func Refresh(ctx context.Context, cfg Config, refreshToken string) (*TokenResponse, error) {
+	cfg.defaults()
+
+	data := url.Values{
+		"client_id":     {cfg.ClientID},
+		"client_secret": {cfg.ClientSecret},
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+	}
+
+	return doTokenRequest(ctx, cfg, data)
+}
+
 // GitHub returns a Config pre-filled with GitHub's OAuth endpoints.
-// You must still set ClientID, ClientSecret, RedirectURI, and the callback functions.
+// You must still set ClientID, ClientSecret, and RedirectURI.
 func GitHub() Config {
 	return Config{
 		Name:     "github",
@@ -128,4 +154,48 @@ func GitHubEnterprise(baseURL string) Config {
 		AuthURL:  baseURL + "/login/oauth/authorize",
 		TokenURL: baseURL + "/login/oauth/access_token",
 	}
+}
+
+// doTokenRequest performs a token request to the OAuth provider.
+func doTokenRequest(ctx context.Context, cfg Config, data url.Values) (*TokenResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.TokenURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("oauth: failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := cfg.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("oauth: failed to contact provider: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("oauth: failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp struct {
+			Error            string `json:"error"`
+			ErrorDescription string `json:"error_description"`
+		}
+		if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
+			reason := errResp.ErrorDescription
+			if reason == "" {
+				reason = errResp.Error
+			}
+			return nil, fmt.Errorf("oauth: provider error: %s", reason)
+		}
+		return nil, fmt.Errorf("oauth: token request failed with status %d", resp.StatusCode)
+	}
+
+	var tokens TokenResponse
+	if err := json.Unmarshal(body, &tokens); err != nil {
+		return nil, fmt.Errorf("oauth: invalid token response: %w", err)
+	}
+
+	return &tokens, nil
 }

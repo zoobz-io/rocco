@@ -218,6 +218,12 @@ type ServiceUnavailableDetails struct {
 	Reason string `json:"reason,omitempty" description:"Why the service is unavailable"`
 }
 
+// BadGatewayDetails provides context for upstream provider errors.
+type BadGatewayDetails struct {
+	Provider string `json:"provider,omitempty" description:"The upstream provider that failed"`
+	Reason   string `json:"reason,omitempty" description:"Error details from the provider"`
+}
+
 // Client errors (4xx)
 var (
 	// ErrBadRequest indicates the request was invalid (400)
@@ -255,6 +261,9 @@ var (
 
 	// ErrNotImplemented indicates the functionality is not implemented (501)
 	ErrNotImplemented = NewError[NotImplementedDetails]("NOT_IMPLEMENTED", 501, "not implemented")
+
+	// ErrBadGateway indicates an upstream provider returned an error (502)
+	ErrBadGateway = NewError[BadGatewayDetails]("BAD_GATEWAY", 502, "bad gateway")
 
 	// ErrServiceUnavailable indicates the service is temporarily unavailable (503)
 	ErrServiceUnavailable = NewError[ServiceUnavailableDetails]("SERVICE_UNAVAILABLE", 503, "service unavailable")
