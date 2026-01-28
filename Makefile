@@ -63,7 +63,7 @@ install-tools:
 ## install-hooks: Install git hooks
 install-hooks:
 	@echo "Installing git hooks..."
-	@echo '#!/bin/sh\nmake check' > .git/hooks/pre-commit
+	@printf '#!/bin/sh\nmake check\n' > .git/hooks/pre-commit
 	@chmod +x .git/hooks/pre-commit
 	@echo "Pre-commit hook installed"
 

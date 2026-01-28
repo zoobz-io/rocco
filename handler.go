@@ -187,6 +187,43 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 		return http.StatusInternalServerError, err
 	}
 
+	// Check for redirect response.
+	if redirect, ok := any(output).(Redirect); ok {
+		// Guard against empty URL.
+		if redirect.URL == "" {
+			capitan.Error(ctx, HandlerError,
+				HandlerNameKey.Field(h.spec.Name),
+				ErrorKey.Field("redirect URL is empty"),
+			)
+			writeError(ctx, w, ErrInternalServer.WithMessage("redirect URL is empty"), h.spec.ContentType, h.spec.Name)
+			return http.StatusInternalServerError, nil
+		}
+
+		status := redirect.Status
+		if status == 0 {
+			status = DefaultRedirectStatus
+		}
+
+		// Write custom response headers (e.g., cookies) but NOT Content-Type.
+		for key, value := range h.responseHeaders {
+			if key != "Content-Type" {
+				w.Header().Set(key, value)
+			}
+		}
+
+		// Write Location header and status.
+		w.Header().Set("Location", redirect.URL)
+		w.WriteHeader(status)
+
+		// Emit success event.
+		capitan.Info(ctx, HandlerSuccess,
+			HandlerNameKey.Field(h.spec.Name),
+			StatusCodeKey.Field(status),
+		)
+
+		return status, nil
+	}
+
 	// Validate output (opt-in, disabled by default).
 	if h.validateOutput && h.outputValidatable {
 		if v, ok := any(output).(Validatable); ok {
