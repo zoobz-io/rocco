@@ -1202,6 +1202,223 @@ func TestWithName(t *testing.T) {
 	}
 }
 
+func TestHandler_OnEntry(t *testing.T) {
+	handler := NewHandler[testInput, testOutput](
+		"test",
+		"POST",
+		"/test",
+		func(req *Request[testInput]) (testOutput, error) {
+			return testOutput{
+				Message: req.Body.Name,
+				Result:  req.Body.Count,
+			}, nil
+		},
+	).OnEntry(func(in testInput) (testInput, error) {
+		in.Name = "modified-" + in.Name
+		in.Count = in.Count * 10
+		return in, nil
+	})
+
+	body, _ := json.Marshal(testInput{Name: "original", Count: 3})
+	req := httptest.NewRequest("POST", "/test", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	_, err := handler.Process(context.Background(), req, w)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var output testOutput
+	json.Unmarshal(w.Body.Bytes(), &output)
+
+	if output.Message != "modified-original" {
+		t.Errorf("expected 'modified-original', got %q", output.Message)
+	}
+	if output.Result != 30 {
+		t.Errorf("expected 30, got %d", output.Result)
+	}
+}
+
+func TestHandler_OnSend(t *testing.T) {
+	handler := NewHandler[NoBody, testOutput](
+		"test",
+		"GET",
+		"/test",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{Message: "hello", Result: 5}, nil
+		},
+	).OnSend(func(out testOutput) (testOutput, error) {
+		out.Message = out.Message + "-transformed"
+		out.Result = out.Result * 2
+		return out, nil
+	})
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+
+	_, err := handler.Process(context.Background(), req, w)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var output testOutput
+	json.Unmarshal(w.Body.Bytes(), &output)
+
+	if output.Message != "hello-transformed" {
+		t.Errorf("expected 'hello-transformed', got %q", output.Message)
+	}
+	if output.Result != 10 {
+		t.Errorf("expected 10, got %d", output.Result)
+	}
+}
+
+func TestHandler_OnEntry_MultipleHooks(t *testing.T) {
+	handler := NewHandler[testInput, testOutput](
+		"test",
+		"POST",
+		"/test",
+		func(req *Request[testInput]) (testOutput, error) {
+			return testOutput{Message: req.Body.Name}, nil
+		},
+	).OnEntry(func(in testInput) (testInput, error) {
+		in.Name = in.Name + "-first"
+		return in, nil
+	}).OnEntry(func(in testInput) (testInput, error) {
+		in.Name = in.Name + "-second"
+		return in, nil
+	})
+
+	body, _ := json.Marshal(testInput{Name: "start"})
+	req := httptest.NewRequest("POST", "/test", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	handler.Process(context.Background(), req, w)
+
+	var output testOutput
+	json.Unmarshal(w.Body.Bytes(), &output)
+
+	if output.Message != "start-first-second" {
+		t.Errorf("expected 'start-first-second', got %q", output.Message)
+	}
+}
+
+func TestHandler_OnSend_MultipleHooks(t *testing.T) {
+	handler := NewHandler[NoBody, testOutput](
+		"test",
+		"GET",
+		"/test",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{Result: 1}, nil
+		},
+	).OnSend(func(out testOutput) (testOutput, error) {
+		out.Result = out.Result + 10
+		return out, nil
+	}).OnSend(func(out testOutput) (testOutput, error) {
+		out.Result = out.Result * 2
+		return out, nil
+	})
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+
+	handler.Process(context.Background(), req, w)
+
+	var output testOutput
+	json.Unmarshal(w.Body.Bytes(), &output)
+
+	// (1 + 10) * 2 = 22
+	if output.Result != 22 {
+		t.Errorf("expected 22, got %d", output.Result)
+	}
+}
+
+func TestHandler_OnEntry_Error(t *testing.T) {
+	handler := NewHandler[testInput, testOutput](
+		"test",
+		"POST",
+		"/test",
+		func(_ *Request[testInput]) (testOutput, error) {
+			return testOutput{Message: "should not reach"}, nil
+		},
+	).OnEntry(func(in testInput) (testInput, error) {
+		return in, errors.New("entry hook failed")
+	})
+
+	body, _ := json.Marshal(testInput{Name: "test"})
+	req := httptest.NewRequest("POST", "/test", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	_, err := handler.Process(context.Background(), req, w)
+
+	if err == nil {
+		t.Fatal("expected error from entry hook")
+	}
+	if w.Code != 500 {
+		t.Errorf("expected status 500, got %d", w.Code)
+	}
+}
+
+func TestHandler_OnSend_Error(t *testing.T) {
+	handler := NewHandler[NoBody, testOutput](
+		"test",
+		"GET",
+		"/test",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{Message: "hello"}, nil
+		},
+	).OnSend(func(out testOutput) (testOutput, error) {
+		return out, errors.New("send hook failed")
+	})
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+
+	_, err := handler.Process(context.Background(), req, w)
+
+	if err == nil {
+		t.Fatal("expected error from send hook")
+	}
+	if w.Code != 500 {
+		t.Errorf("expected status 500, got %d", w.Code)
+	}
+}
+
+func TestHandler_OnEntry_Chaining(t *testing.T) {
+	handler := NewHandler[NoBody, testOutput](
+		"test",
+		"GET",
+		"/test",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	).OnEntry(func(in NoBody) (NoBody, error) {
+		return in, nil
+	}).WithSummary("Test")
+
+	spec := handler.Spec()
+	if spec.Summary != "Test" {
+		t.Errorf("expected summary 'Test', got %q", spec.Summary)
+	}
+}
+
+func TestHandler_OnSend_Chaining(t *testing.T) {
+	handler := NewHandler[NoBody, testOutput](
+		"test",
+		"GET",
+		"/test",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	).OnSend(func(out testOutput) (testOutput, error) {
+		return out, nil
+	}).WithSummary("Test")
+
+	spec := handler.Spec()
+	if spec.Summary != "Test" {
+		t.Errorf("expected summary 'Test', got %q", spec.Summary)
+	}
+}
+
 func TestHTTPMethodShortcuts_Chaining(t *testing.T) {
 	handler := GET[NoBody, testOutput]("/users", func(r *Request[NoBody]) (testOutput, error) {
 		return testOutput{}, nil

@@ -52,6 +52,10 @@ type Handler[In, Out any] struct {
 
 	// Middleware.
 	middleware []func(http.Handler) http.Handler
+
+	// Hooks.
+	onEntry []func(In) (In, error)
+	onSend  []func(Out) (Out, error)
 }
 
 // Process implements Endpoint.
@@ -134,6 +138,19 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 		}
 	}
 
+	// Run entry hooks.
+	for _, hook := range h.onEntry {
+		input, err = hook(input)
+		if err != nil {
+			capitan.Error(ctx, HandlerError,
+				HandlerNameKey.Field(h.spec.Name),
+				ErrorKey.Field(err.Error()),
+			)
+			writeError(ctx, w, ErrInternalServer.WithCause(err), h.spec.ContentType, h.spec.Name)
+			return http.StatusInternalServerError, err
+		}
+	}
+
 	// Extract identity from context if present
 	var identity Identity = NoIdentity{}
 	if val := ctx.Value(identityContextKey); val != nil {
@@ -185,6 +202,19 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 		)
 		writeError(ctx, w, ErrInternalServer, h.spec.ContentType, h.spec.Name)
 		return http.StatusInternalServerError, err
+	}
+
+	// Run send hooks.
+	for _, hook := range h.onSend {
+		output, err = hook(output)
+		if err != nil {
+			capitan.Error(ctx, HandlerError,
+				HandlerNameKey.Field(h.spec.Name),
+				ErrorKey.Field(err.Error()),
+			)
+			writeError(ctx, w, ErrInternalServer.WithCause(err), h.spec.ContentType, h.spec.Name)
+			return http.StatusInternalServerError, err
+		}
 	}
 
 	// Check for redirect response.
@@ -328,6 +358,8 @@ func NewHandler[In, Out any](name string, method, path string, fn func(*Request[
 		inputValidatable:  inputValidatable,
 		outputValidatable: outputValidatable,
 		middleware:        make([]func(http.Handler) http.Handler, 0),
+		onEntry:           make([]func(In) (In, error), 0),
+		onSend:            make([]func(Out) (Out, error), 0),
 	}
 }
 
@@ -486,6 +518,20 @@ func (h *Handler[In, Out]) applyDefaultCodec(codec Codec) {
 		h.codec = codec
 		h.spec.ContentType = codec.ContentType()
 	}
+}
+
+// OnEntry adds a hook that transforms the input before the handler executes.
+// Hooks run in order after body parsing and validation, before the handler function.
+func (h *Handler[In, Out]) OnEntry(fn func(In) (In, error)) *Handler[In, Out] {
+	h.onEntry = append(h.onEntry, fn)
+	return h
+}
+
+// OnSend adds a hook that transforms the output after the handler executes.
+// Hooks run in order after the handler function, before output validation and marshaling.
+func (h *Handler[In, Out]) OnSend(fn func(Out) (Out, error)) *Handler[In, Out] {
+	h.onSend = append(h.onSend, fn)
+	return h
 }
 
 // WithMiddleware adds middleware to this handler and returns the handler for chaining.
