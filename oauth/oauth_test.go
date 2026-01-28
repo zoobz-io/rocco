@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
-
-	"github.com/zoobzio/rocco"
 )
 
 func TestGitHub(t *testing.T) {
@@ -43,14 +40,11 @@ func TestGitHubEnterprise(t *testing.T) {
 func TestConfig_Validate(t *testing.T) {
 	validCfg := func() Config {
 		return Config{
-			AuthURL:       "https://example.com/auth",
-			TokenURL:      "https://example.com/token",
-			ClientID:      "client-id",
-			ClientSecret:  "client-secret",
-			RedirectURI:   "https://myapp.com/callback",
-			GenerateState: func(ctx context.Context) (string, error) { return "state", nil },
-			VerifyState:   func(ctx context.Context, state string) (bool, error) { return true, nil },
-			OnSuccess:     func(ctx context.Context, tokens *TokenResponse) error { return nil },
+			AuthURL:      "https://example.com/auth",
+			TokenURL:     "https://example.com/token",
+			ClientID:     "client-id",
+			ClientSecret: "client-secret",
+			RedirectURI:  "https://myapp.com/callback",
 		}
 	}
 
@@ -65,16 +59,13 @@ func TestConfig_Validate(t *testing.T) {
 		{"missing ClientID", func(c *Config) { c.ClientID = "" }, "ClientID is required"},
 		{"missing ClientSecret", func(c *Config) { c.ClientSecret = "" }, "ClientSecret is required"},
 		{"missing RedirectURI", func(c *Config) { c.RedirectURI = "" }, "RedirectURI is required"},
-		{"missing GenerateState", func(c *Config) { c.GenerateState = nil }, "GenerateState callback is required"},
-		{"missing VerifyState", func(c *Config) { c.VerifyState = nil }, "VerifyState callback is required"},
-		{"missing OnSuccess", func(c *Config) { c.OnSuccess = nil }, "OnSuccess callback is required"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := validCfg()
 			tc.modify(&cfg)
-			err := cfg.validate()
+			err := cfg.Validate()
 
 			if tc.wantErr == "" {
 				if err != nil {
@@ -91,73 +82,65 @@ func TestConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestNewLoginHandler(t *testing.T) {
+func TestAuthURL(t *testing.T) {
 	cfg := Config{
-		Name:         "test",
-		AuthURL:      "https://provider.com/auth",
-		TokenURL:     "https://provider.com/token",
-		ClientID:     "client-id",
-		ClientSecret: "client-secret",
-		RedirectURI:  "https://myapp.com/callback",
-		Scopes:       []string{"read", "write"},
-		GenerateState: func(ctx context.Context) (string, error) {
-			return "test-state-123", nil
-		},
-		VerifyState: func(ctx context.Context, state string) (bool, error) { return true, nil },
-		OnSuccess:   func(ctx context.Context, tokens *TokenResponse) error { return nil },
+		AuthURL:     "https://provider.com/auth",
+		ClientID:    "my-client",
+		RedirectURI: "https://myapp.com/callback",
+		Scopes:      []string{"read", "write", "admin"},
 	}
 
-	handler, err := NewLoginHandler("/auth/login", cfg)
-	if err != nil {
-		t.Fatalf("unexpected error creating handler: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/auth/login", nil)
-	w := httptest.NewRecorder()
-
-	status, err := handler.Process(context.Background(), req, w)
+	u, err := AuthURL(cfg, "random-state")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if status != http.StatusFound {
-		t.Errorf("expected status %d, got %d", http.StatusFound, status)
+	expected := []string{
+		"client_id=my-client",
+		"redirect_uri=https%3A%2F%2Fmyapp.com%2Fcallback",
+		"state=random-state",
+		"response_type=code",
+		"scope=read+write+admin",
 	}
 
-	location := w.Header().Get("Location")
-	if location == "" {
-		t.Fatal("expected Location header")
-	}
-
-	u, err := url.Parse(location)
-	if err != nil {
-		t.Fatalf("failed to parse Location: %v", err)
-	}
-
-	if u.Host != "provider.com" {
-		t.Errorf("expected host 'provider.com', got %q", u.Host)
-	}
-
-	q := u.Query()
-	if q.Get("client_id") != "client-id" {
-		t.Errorf("expected client_id 'client-id', got %q", q.Get("client_id"))
-	}
-	if q.Get("redirect_uri") != "https://myapp.com/callback" {
-		t.Errorf("unexpected redirect_uri: %s", q.Get("redirect_uri"))
-	}
-	if q.Get("state") != "test-state-123" {
-		t.Errorf("expected state 'test-state-123', got %q", q.Get("state"))
-	}
-	if q.Get("scope") != "read write" {
-		t.Errorf("expected scope 'read write', got %q", q.Get("scope"))
-	}
-	if q.Get("response_type") != "code" {
-		t.Errorf("expected response_type 'code', got %q", q.Get("response_type"))
+	for _, param := range expected {
+		if !strings.Contains(u, param) {
+			t.Errorf("expected URL to contain %q, got %s", param, u)
+		}
 	}
 }
 
-func TestNewCallbackHandler_Success(t *testing.T) {
-	// Create a mock OAuth server
+func TestAuthURL_NoScopes(t *testing.T) {
+	cfg := Config{
+		AuthURL:     "https://provider.com/auth",
+		ClientID:    "client",
+		RedirectURI: "https://myapp.com/callback",
+	}
+
+	u, err := AuthURL(cfg, "state")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(u, "scope=") {
+		t.Error("expected no scope parameter in URL")
+	}
+}
+
+func TestAuthURL_InvalidURL(t *testing.T) {
+	cfg := Config{
+		AuthURL:     "://invalid",
+		ClientID:    "client",
+		RedirectURI: "https://myapp.com/callback",
+	}
+
+	_, err := AuthURL(cfg, "state")
+	if err == nil {
+		t.Error("expected error for invalid URL")
+	}
+}
+
+func TestExchange(t *testing.T) {
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
@@ -169,6 +152,9 @@ func TestNewCallbackHandler_Success(t *testing.T) {
 
 		if r.Form.Get("code") != "auth-code-123" {
 			t.Errorf("expected code 'auth-code-123', got %q", r.Form.Get("code"))
+		}
+		if r.Form.Get("grant_type") != "authorization_code" {
+			t.Errorf("expected grant_type 'authorization_code', got %q", r.Form.Get("grant_type"))
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -182,259 +168,75 @@ func TestNewCallbackHandler_Success(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	var receivedTokens *TokenResponse
 	cfg := Config{
-		Name:         "test",
-		AuthURL:      "https://provider.com/auth",
 		TokenURL:     mockServer.URL,
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",
 		RedirectURI:  "https://myapp.com/callback",
-		GenerateState: func(ctx context.Context) (string, error) {
-			return "test-state", nil
-		},
-		VerifyState: func(ctx context.Context, state string) (bool, error) {
-			return state == "valid-state", nil
-		},
-		OnSuccess: func(ctx context.Context, tokens *TokenResponse) error {
-			receivedTokens = tokens
-			return nil
-		},
 	}
 
-	type callbackResponse struct {
-		Success bool `json:"success"`
-	}
-
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (callbackResponse, error) {
-		return callbackResponse{Success: true}, nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error creating handler: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=auth-code-123&state=valid-state", nil)
-	w := httptest.NewRecorder()
-
-	status, err := handler.Process(context.Background(), req, w)
+	tokens, err := Exchange(context.Background(), cfg, "auth-code-123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if status != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, status)
+	if tokens.AccessToken != "access-token-xyz" {
+		t.Errorf("expected access token 'access-token-xyz', got %q", tokens.AccessToken)
 	}
-
-	if receivedTokens == nil {
-		t.Fatal("OnSuccess was not called")
-	}
-	if receivedTokens.AccessToken != "access-token-xyz" {
-		t.Errorf("expected access token 'access-token-xyz', got %q", receivedTokens.AccessToken)
-	}
-	if receivedTokens.RefreshToken != "refresh-token-abc" {
-		t.Errorf("expected refresh token 'refresh-token-abc', got %q", receivedTokens.RefreshToken)
+	if tokens.RefreshToken != "refresh-token-abc" {
+		t.Errorf("expected refresh token 'refresh-token-abc', got %q", tokens.RefreshToken)
 	}
 }
 
-func TestNewCallbackHandler_InvalidState(t *testing.T) {
-	// Need a mock server even though we won't reach it (state check happens first)
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("should not reach token endpoint with invalid state")
-	}))
-	defer mockServer.Close()
-
-	cfg := Config{
-		Name:         "test",
-		AuthURL:      "https://provider.com/auth",
-		TokenURL:     mockServer.URL,
-		ClientID:     "client-id",
-		ClientSecret: "client-secret",
-		RedirectURI:  "https://myapp.com/callback",
-		GenerateState: func(ctx context.Context) (string, error) {
-			return "test-state", nil
-		},
-		VerifyState: func(ctx context.Context, state string) (bool, error) {
-			return false, nil // State is invalid
-		},
-		OnSuccess: func(ctx context.Context, tokens *TokenResponse) error {
-			return nil
-		},
-	}
-
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
-		return rocco.Redirect{URL: "/dashboard"}, nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error creating handler: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=some-code&state=wrong-state", nil)
-	w := httptest.NewRecorder()
-
-	status, _ := handler.Process(context.Background(), req, w)
-
-	if status != http.StatusBadRequest {
-		t.Errorf("expected status %d, got %d", http.StatusBadRequest, status)
-	}
-}
-
-func TestNewCallbackHandler_MissingCode(t *testing.T) {
-	// Use mock server to ensure test is hermetic (no outbound calls)
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("should not reach token endpoint when code is missing")
-		w.WriteHeader(http.StatusBadRequest)
-	}))
-	defer mockServer.Close()
-
-	cfg := Config{
-		Name:         "test",
-		AuthURL:      "https://provider.com/auth",
-		TokenURL:     mockServer.URL,
-		ClientID:     "client-id",
-		ClientSecret: "client-secret",
-		RedirectURI:  "https://myapp.com/callback",
-		GenerateState: func(ctx context.Context) (string, error) {
-			return "test-state", nil
-		},
-		VerifyState: func(ctx context.Context, state string) (bool, error) {
-			return true, nil
-		},
-		OnSuccess: func(ctx context.Context, tokens *TokenResponse) error {
-			return nil
-		},
-	}
-
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
-		return rocco.Redirect{URL: "/dashboard"}, nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error creating handler: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/auth/callback?state=valid-state", nil)
-	w := httptest.NewRecorder()
-
-	status, _ := handler.Process(context.Background(), req, w)
-
-	if status != http.StatusBadRequest {
-		t.Errorf("expected status %d, got %d", http.StatusBadRequest, status)
-	}
-}
-
-func TestNewCallbackHandler_WithRedirect(t *testing.T) {
+func TestExchange_Failure(t *testing.T) {
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(TokenResponse{
-			AccessToken: "token",
-			TokenType:   "Bearer",
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "The authorization code has expired",
 		})
 	}))
 	defer mockServer.Close()
 
 	cfg := Config{
-		Name:         "test",
-		AuthURL:      "https://provider.com/auth",
 		TokenURL:     mockServer.URL,
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",
 		RedirectURI:  "https://myapp.com/callback",
-		GenerateState: func(ctx context.Context) (string, error) {
-			return "state", nil
-		},
-		VerifyState: func(ctx context.Context, state string) (bool, error) {
-			return true, nil
-		},
-		OnSuccess: func(ctx context.Context, tokens *TokenResponse) error {
-			return nil
-		},
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
-		return rocco.Redirect{URL: "/dashboard"}, nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error creating handler: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=code&state=state", nil)
-	w := httptest.NewRecorder()
-
-	status, processErr := handler.Process(context.Background(), req, w)
-	if processErr != nil {
-		t.Fatalf("unexpected error: %v", processErr)
-	}
-
-	if status != http.StatusFound {
-		t.Errorf("expected status %d, got %d", http.StatusFound, status)
-	}
-
-	if loc := w.Header().Get("Location"); loc != "/dashboard" {
-		t.Errorf("expected Location '/dashboard', got %q", loc)
-	}
-}
-
-func TestNewLoginHandler_ValidationError(t *testing.T) {
-	// Missing required fields
-	cfg := Config{
-		Name:    "test",
-		AuthURL: "https://provider.com/auth",
-		// Missing TokenURL, ClientID, ClientSecret, etc.
-	}
-
-	_, err := NewLoginHandler("/auth/login", cfg)
+	_, err := Exchange(context.Background(), cfg, "expired-code")
 	if err == nil {
-		t.Fatal("expected error for invalid config, got nil")
+		t.Fatal("expected error, got nil")
 	}
 
-	// Should contain "invalid config" in error message
-	if !strings.Contains(err.Error(), "invalid config") {
-		t.Errorf("expected error to mention 'invalid config', got %q", err.Error())
-	}
-}
-
-func TestNewCallbackHandler_ValidationError(t *testing.T) {
-	// Missing required fields
-	cfg := Config{
-		Name:    "test",
-		AuthURL: "https://provider.com/auth",
-		// Missing TokenURL, ClientID, ClientSecret, etc.
-	}
-
-	_, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
-		return rocco.Redirect{URL: "/dashboard"}, nil
-	})
-	if err == nil {
-		t.Fatal("expected error for invalid config, got nil")
-	}
-
-	// Should contain "invalid config" in error message
-	if !strings.Contains(err.Error(), "invalid config") {
-		t.Errorf("expected error to mention 'invalid config', got %q", err.Error())
+	if !strings.Contains(err.Error(), "The authorization code has expired") {
+		t.Errorf("expected error to contain provider message, got %q", err.Error())
 	}
 }
 
-func TestNewCallbackHandler_NilRespondFunction(t *testing.T) {
+func TestExchange_InvalidJSON(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("not valid json"))
+	}))
+	defer mockServer.Close()
+
 	cfg := Config{
-		Name:         "test",
-		AuthURL:      "https://provider.com/auth",
-		TokenURL:     "https://provider.com/token",
+		TokenURL:     mockServer.URL,
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",
 		RedirectURI:  "https://myapp.com/callback",
-		GenerateState: func(ctx context.Context) (string, error) {
-			return "state", nil
-		},
-		VerifyState: func(ctx context.Context, state string) (bool, error) { return true, nil },
-		OnSuccess:   func(ctx context.Context, tokens *TokenResponse) error { return nil },
 	}
 
-	_, err := NewCallbackHandler[rocco.Redirect]("/auth/callback", cfg, nil)
+	_, err := Exchange(context.Background(), cfg, "code")
 	if err == nil {
-		t.Fatal("expected error for nil respond function, got nil")
+		t.Fatal("expected error, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "respond function is required") {
-		t.Errorf("expected error to mention 'respond function is required', got %q", err.Error())
+	if !strings.Contains(err.Error(), "invalid token response") {
+		t.Errorf("expected error about invalid response, got %q", err.Error())
 	}
 }
 
@@ -462,7 +264,6 @@ func TestRefresh(t *testing.T) {
 	defer mockServer.Close()
 
 	cfg := Config{
-		Name:         "test",
 		TokenURL:     mockServer.URL,
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",
@@ -478,5 +279,124 @@ func TestRefresh(t *testing.T) {
 	}
 	if tokens.RefreshToken != "new-refresh-token" {
 		t.Errorf("expected refresh token 'new-refresh-token', got %q", tokens.RefreshToken)
+	}
+}
+
+func TestRefresh_Failure(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "Refresh token has been revoked",
+		})
+	}))
+	defer mockServer.Close()
+
+	cfg := Config{
+		TokenURL:     mockServer.URL,
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+	}
+
+	_, err := Refresh(context.Background(), cfg, "revoked-token")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "Refresh token has been revoked") {
+		t.Errorf("expected error about revoked token, got %q", err.Error())
+	}
+}
+
+func TestDoTokenRequest_ConnectionError(t *testing.T) {
+	cfg := Config{
+		TokenURL:     "http://localhost:1",
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+	}
+
+	_, err := Refresh(context.Background(), cfg, "token")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to contact provider") {
+		t.Errorf("expected connection error, got %q", err.Error())
+	}
+}
+
+func TestDoTokenRequest_InvalidURL(t *testing.T) {
+	cfg := Config{
+		TokenURL:     "://invalid",
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+	}
+
+	_, err := Refresh(context.Background(), cfg, "token")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to create request") {
+		t.Errorf("expected request creation error, got %q", err.Error())
+	}
+}
+
+func TestDoTokenRequest_NonJSONError(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("<html>Service Unavailable</html>"))
+	}))
+	defer mockServer.Close()
+
+	cfg := Config{
+		TokenURL:     mockServer.URL,
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+	}
+
+	_, err := Refresh(context.Background(), cfg, "token")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "token request failed with status 503") {
+		t.Errorf("expected status error, got %q", err.Error())
+	}
+}
+
+func TestDoTokenRequest_ErrorWithoutDescription(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "invalid_request",
+		})
+	}))
+	defer mockServer.Close()
+
+	cfg := Config{
+		TokenURL:     mockServer.URL,
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+	}
+
+	_, err := Refresh(context.Background(), cfg, "token")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "invalid_request") {
+		t.Errorf("expected error code as reason, got %q", err.Error())
+	}
+}
+
+func TestDefaults(t *testing.T) {
+	cfg := Config{}
+	cfg.defaults()
+
+	if cfg.HTTPClient == nil {
+		t.Error("expected default HTTPClient")
 	}
 }

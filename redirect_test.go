@@ -184,6 +184,73 @@ func TestRedirect_EmptyURL(t *testing.T) {
 	}
 }
 
+func TestRedirect_WithHeaders(t *testing.T) {
+	handler := NewHandler[NoBody, Redirect](
+		"redirect-test",
+		"GET",
+		"/redirect",
+		func(_ *Request[NoBody]) (Redirect, error) {
+			return Redirect{
+				URL: "/target",
+				Headers: http.Header{
+					"Set-Cookie": {"sid=abc; Path=/; HttpOnly", "theme=dark; Path=/"},
+					"X-Custom":   {"value"},
+				},
+			}, nil
+		},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/redirect", nil)
+	w := httptest.NewRecorder()
+
+	status, err := handler.Process(context.Background(), req, w)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if status != http.StatusFound {
+		t.Errorf("expected status %d, got %d", http.StatusFound, status)
+	}
+
+	cookies := w.Header().Values("Set-Cookie")
+	if len(cookies) != 2 {
+		t.Fatalf("expected 2 Set-Cookie headers, got %d", len(cookies))
+	}
+	if cookies[0] != "sid=abc; Path=/; HttpOnly" {
+		t.Errorf("unexpected first cookie: %q", cookies[0])
+	}
+	if cookies[1] != "theme=dark; Path=/" {
+		t.Errorf("unexpected second cookie: %q", cookies[1])
+	}
+
+	if custom := w.Header().Get("X-Custom"); custom != "value" {
+		t.Errorf("expected X-Custom 'value', got %q", custom)
+	}
+}
+
+func TestRedirect_NilHeaders(t *testing.T) {
+	handler := NewHandler[NoBody, Redirect](
+		"redirect-test",
+		"GET",
+		"/redirect",
+		func(_ *Request[NoBody]) (Redirect, error) {
+			return Redirect{URL: "/target", Headers: nil}, nil
+		},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/redirect", nil)
+	w := httptest.NewRecorder()
+
+	status, err := handler.Process(context.Background(), req, w)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if status != http.StatusFound {
+		t.Errorf("expected status %d, got %d", http.StatusFound, status)
+	}
+}
+
 func TestRedirect_ContentTypeNotForwarded(t *testing.T) {
 	handler := NewHandler[NoBody, Redirect](
 		"redirect-test",

@@ -211,6 +211,13 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 			}
 		}
 
+		// Write redirect-specific headers (e.g., Set-Cookie from session).
+		for key, values := range redirect.Headers {
+			for _, v := range values {
+				w.Header().Add(key, v)
+			}
+		}
+
 		// Write Location header and status.
 		w.Header().Set("Location", redirect.URL)
 		w.WriteHeader(status)

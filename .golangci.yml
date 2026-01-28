@@ -100,6 +100,7 @@ linters:
         - (io.Closer).Close  # Handled by bodyclose
         - (net/http.ResponseWriter).Write  # Standard practice after WriteHeader
         - (*encoding/json.Encoder).Encode  # Standard practice for response encoding
+        - (github.com/zoobzio/rocco/session.Store).Delete  # Best-effort on logout
 
     gocritic:
       enabled-checks:
