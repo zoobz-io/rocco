@@ -1142,6 +1142,51 @@ func (m *mockIdentity) HasRole(role string) bool {
 	return false
 }
 
+func TestGenerateOpenAPI_EmptyContentTypeFallback(t *testing.T) {
+	engine := newTestEngine()
+
+	// Create a handler and clear its ContentType to exercise the fallback
+	handler := NewHandler[testInput, testOutput](
+		"empty-ct",
+		"POST",
+		"/empty-ct",
+		func(req *Request[testInput]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	)
+	handler.spec.ContentType = "" // Force empty to trigger fallback
+
+	engine.WithHandlers(handler)
+	engine.WithOpenAPIInfo(openapi.Info{Title: "Test", Version: "1.0.0"})
+
+	spec := engine.GenerateOpenAPI(nil)
+
+	pathItem, exists := spec.Paths["/empty-ct"]
+	if !exists {
+		t.Fatal("expected path '/empty-ct' to exist")
+	}
+	if pathItem.Post == nil {
+		t.Fatal("expected POST operation")
+	}
+
+	// Check request body uses fallback content type
+	if pathItem.Post.RequestBody == nil {
+		t.Fatal("expected request body")
+	}
+	if _, exists := pathItem.Post.RequestBody.Content[ContentTypeJSON]; !exists {
+		t.Error("expected request body content type to fall back to application/json")
+	}
+
+	// Check response uses fallback content type
+	resp, exists := pathItem.Post.Responses["200"]
+	if !exists {
+		t.Fatal("expected 200 response")
+	}
+	if _, exists := resp.Content[ContentTypeJSON]; !exists {
+		t.Error("expected response content type to fall back to application/json")
+	}
+}
+
 func TestParseValidateTag_EmptyTag(t *testing.T) {
 	constraints := parseValidateTag("", "string")
 	if constraints != nil {

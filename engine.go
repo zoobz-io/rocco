@@ -386,7 +386,7 @@ func (e *Engine) registerDefaultHandlers() {
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", ContentTypeJSON)
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write(e.cachedOpenAPISpec); err != nil {
 			capitan.Warn(r.Context(), ResponseWriteError,

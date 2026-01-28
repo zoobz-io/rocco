@@ -4,10 +4,16 @@ import (
 	"testing"
 )
 
+func TestContentTypeJSON(t *testing.T) {
+	if ContentTypeJSON != "application/json" {
+		t.Errorf("ContentTypeJSON = %q, want %q", ContentTypeJSON, "application/json")
+	}
+}
+
 func TestJSONCodec_ContentType(t *testing.T) {
 	codec := JSONCodec{}
-	if got := codec.ContentType(); got != "application/json" {
-		t.Errorf("ContentType() = %q, want %q", got, "application/json")
+	if got := codec.ContentType(); got != ContentTypeJSON {
+		t.Errorf("ContentType() = %q, want %q", got, ContentTypeJSON)
 	}
 }
 
@@ -101,7 +107,7 @@ func TestDefaultCodec(t *testing.T) {
 	if defaultCodec == nil {
 		t.Fatal("defaultCodec is nil")
 	}
-	if defaultCodec.ContentType() != "application/json" {
-		t.Errorf("defaultCodec.ContentType() = %q, want %q", defaultCodec.ContentType(), "application/json")
+	if defaultCodec.ContentType() != ContentTypeJSON {
+		t.Errorf("defaultCodec.ContentType() = %q, want %q", defaultCodec.ContentType(), ContentTypeJSON)
 	}
 }
