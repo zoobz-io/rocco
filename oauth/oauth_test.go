@@ -206,7 +206,7 @@ func TestNewCallbackHandler_Success(t *testing.T) {
 		Success bool `json:"success"`
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (callbackResponse, error) {
+	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (callbackResponse, error) {
 		return callbackResponse{Success: true}, nil
 	})
 	if err != nil {
@@ -261,7 +261,7 @@ func TestNewCallbackHandler_InvalidState(t *testing.T) {
 		},
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (rocco.Redirect, error) {
+	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
 		return rocco.Redirect{URL: "/dashboard"}, nil
 	})
 	if err != nil {
@@ -304,7 +304,7 @@ func TestNewCallbackHandler_MissingCode(t *testing.T) {
 		},
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (rocco.Redirect, error) {
+	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
 		return rocco.Redirect{URL: "/dashboard"}, nil
 	})
 	if err != nil {
@@ -349,7 +349,7 @@ func TestNewCallbackHandler_WithRedirect(t *testing.T) {
 		},
 	}
 
-	handler, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (rocco.Redirect, error) {
+	handler, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
 		return rocco.Redirect{URL: "/dashboard"}, nil
 	})
 	if err != nil {
@@ -400,7 +400,7 @@ func TestNewCallbackHandler_ValidationError(t *testing.T) {
 		// Missing TokenURL, ClientID, ClientSecret, etc.
 	}
 
-	_, err := NewCallbackHandler("/auth/callback", cfg, func(tokens *TokenResponse) (rocco.Redirect, error) {
+	_, err := NewCallbackHandler("/auth/callback", cfg, func(ctx context.Context, tokens *TokenResponse) (rocco.Redirect, error) {
 		return rocco.Redirect{URL: "/dashboard"}, nil
 	})
 	if err == nil {
