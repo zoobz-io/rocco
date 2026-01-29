@@ -54,8 +54,8 @@ type Handler[In, Out any] struct {
 	middleware []func(http.Handler) http.Handler
 
 	// Hooks.
-	onEntry []func(In) (In, error)
-	onSend  []func(Out) (Out, error)
+	inputEntryable bool // True if In implements Entryable.
+	outputSendable bool // True if Out implements Sendable.
 }
 
 // Process implements Endpoint.
@@ -138,16 +138,17 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 		}
 	}
 
-	// Run entry hooks.
-	for _, hook := range h.onEntry {
-		input, err = hook(input)
-		if err != nil {
-			capitan.Error(ctx, HandlerError,
-				HandlerNameKey.Field(h.spec.Name),
-				ErrorKey.Field(err.Error()),
-			)
-			writeError(ctx, w, ErrInternalServer.WithCause(err), h.spec.ContentType, h.spec.Name)
-			return http.StatusInternalServerError, err
+	// Run entry hook.
+	if h.inputEntryable {
+		if e, ok := any(&input).(Entryable); ok {
+			if err = e.OnEntry(ctx); err != nil {
+				capitan.Error(ctx, HandlerError,
+					HandlerNameKey.Field(h.spec.Name),
+					ErrorKey.Field(err.Error()),
+				)
+				writeError(ctx, w, ErrInternalServer.WithCause(err), h.spec.ContentType, h.spec.Name)
+				return http.StatusInternalServerError, err
+			}
 		}
 	}
 
@@ -204,16 +205,17 @@ func (h *Handler[In, Out]) Process(ctx context.Context, r *http.Request, w http.
 		return http.StatusInternalServerError, err
 	}
 
-	// Run send hooks.
-	for _, hook := range h.onSend {
-		output, err = hook(output)
-		if err != nil {
-			capitan.Error(ctx, HandlerError,
-				HandlerNameKey.Field(h.spec.Name),
-				ErrorKey.Field(err.Error()),
-			)
-			writeError(ctx, w, ErrInternalServer.WithCause(err), h.spec.ContentType, h.spec.Name)
-			return http.StatusInternalServerError, err
+	// Run send hook.
+	if h.outputSendable {
+		if e, ok := any(&output).(Sendable); ok {
+			if err = e.OnSend(ctx); err != nil {
+				capitan.Error(ctx, HandlerError,
+					HandlerNameKey.Field(h.spec.Name),
+					ErrorKey.Field(err.Error()),
+				)
+				writeError(ctx, w, ErrInternalServer.WithCause(err), h.spec.ContentType, h.spec.Name)
+				return http.StatusInternalServerError, err
+			}
 		}
 	}
 
@@ -330,6 +332,8 @@ func NewHandler[In, Out any](name string, method, path string, fn func(*Request[
 	var zeroOut Out
 	_, inputValidatable := any(zeroIn).(Validatable)
 	_, outputValidatable := any(zeroOut).(Validatable)
+	_, inputEntryable := any(&zeroIn).(Entryable)
+	_, outputSendable := any(&zeroOut).(Sendable)
 
 	return &Handler[In, Out]{
 		fn: fn,
@@ -357,9 +361,9 @@ func NewHandler[In, Out any](name string, method, path string, fn func(*Request[
 		OutputMeta:        outputMeta,
 		inputValidatable:  inputValidatable,
 		outputValidatable: outputValidatable,
+		inputEntryable:    inputEntryable,
+		outputSendable:    outputSendable,
 		middleware:        make([]func(http.Handler) http.Handler, 0),
-		onEntry:           make([]func(In) (In, error), 0),
-		onSend:            make([]func(Out) (Out, error), 0),
 	}
 }
 
@@ -518,20 +522,6 @@ func (h *Handler[In, Out]) applyDefaultCodec(codec Codec) {
 		h.codec = codec
 		h.spec.ContentType = codec.ContentType()
 	}
-}
-
-// OnEntry adds a hook that transforms the input before the handler executes.
-// Hooks run in order after body parsing and validation, before the handler function.
-func (h *Handler[In, Out]) OnEntry(fn func(In) (In, error)) *Handler[In, Out] {
-	h.onEntry = append(h.onEntry, fn)
-	return h
-}
-
-// OnSend adds a hook that transforms the output after the handler executes.
-// Hooks run in order after the handler function, before output validation and marshaling.
-func (h *Handler[In, Out]) OnSend(fn func(Out) (Out, error)) *Handler[In, Out] {
-	h.onSend = append(h.onSend, fn)
-	return h
 }
 
 // WithMiddleware adds middleware to this handler and returns the handler for chaining.
