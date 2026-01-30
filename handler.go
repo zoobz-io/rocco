@@ -343,7 +343,9 @@ func NewHandler[In, Out any](name string, method, path string, fn func(*Request[
 			Path:           path,
 			PathParams:     []string{},
 			QueryParams:    []string{},
+			InputTypeFQDN:  inputMeta.FQDN,
 			InputTypeName:  inputMeta.TypeName,
+			OutputTypeFQDN: outputMeta.FQDN,
 			OutputTypeName: outputMeta.TypeName,
 			SuccessStatus:  http.StatusOK, // Default to 200.
 			ErrorCodes:     []int{},

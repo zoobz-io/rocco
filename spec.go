@@ -19,7 +19,9 @@ type HandlerSpec struct {
 	// Request/Response
 	PathParams     []string `json:"pathParams,omitempty" yaml:"pathParams,omitempty"`
 	QueryParams    []string `json:"queryParams,omitempty" yaml:"queryParams,omitempty"`
+	InputTypeFQDN  string   `json:"-" yaml:"-"`
 	InputTypeName  string   `json:"inputTypeName" yaml:"inputTypeName"`
+	OutputTypeFQDN string   `json:"-" yaml:"-"`
 	OutputTypeName string   `json:"outputTypeName" yaml:"outputTypeName"`
 	SuccessStatus  int      `json:"successStatus" yaml:"successStatus"`
 	ErrorCodes     []int    `json:"errorCodes,omitempty" yaml:"errorCodes,omitempty"`
