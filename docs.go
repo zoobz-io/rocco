@@ -604,15 +604,29 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 		}
 	}
 
-	// Add base ErrorResponse schema (used for untyped errors like 500)
-	spec.Components.Schemas["ErrorResponse"] = &openapi.Schema{
-		Type: openapi.NewSchemaType("object"),
-		Properties: map[string]*openapi.Schema{
-			"code":    {Type: openapi.NewSchemaType("string"), Description: "Machine-readable error code"},
+	// Generate typed error response schemas from collected error definitions
+	for code, errDef := range errorDefs {
+		detailsMeta := errDef.DetailsMeta()
+		schemaName := "Err" + errorCodeToSchemaName(code)
+
+		// Build properties for the error response
+		properties := map[string]*openapi.Schema{
+			"code":    {Type: openapi.NewSchemaType("string"), Const: code, Description: "Machine-readable error code"},
 			"message": {Type: openapi.NewSchemaType("string"), Description: "Human-readable error message"},
-			"details": {Type: openapi.NewSchemaType("object"), Description: "Optional additional error details"},
-		},
-		Required: []string{"code", "message"},
+		}
+
+		// Inline details fields directly on the error schema
+		if detailsMeta.TypeName != "" && detailsMeta.TypeName != "NoDetails" {
+			detailsSchema := metadataToSchema(detailsMeta)
+			properties["details"] = detailsSchema
+		}
+
+		// Create the typed error response schema
+		spec.Components.Schemas[schemaName] = &openapi.Schema{
+			Type:       openapi.NewSchemaType("object"),
+			Properties: properties,
+			Required:   []string{"code", "message"},
+		}
 	}
 
 	// Track unique schemas to add to components
@@ -637,34 +651,6 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 			if relMeta, found := sentinel.Lookup(rel.To); found {
 				collectSchemas(relMeta)
 			}
-		}
-	}
-
-	// Generate typed error response schemas from collected error definitions
-	for code, errDef := range errorDefs {
-		detailsMeta := errDef.DetailsMeta()
-		schemaName := errorCodeToSchemaName(code) + "ErrorResponse"
-
-		// Build properties for the error response
-		properties := map[string]*openapi.Schema{
-			"code":    {Type: openapi.NewSchemaType("string"), Description: "Machine-readable error code"},
-			"message": {Type: openapi.NewSchemaType("string"), Description: "Human-readable error message"},
-		}
-
-		// Add typed details if the error has a details type
-		if detailsMeta.TypeName != "" && detailsMeta.TypeName != "NoDetails" {
-			// Collect the details schema
-			collectSchemas(detailsMeta)
-			properties["details"] = &openapi.Schema{
-				Ref: "#/components/schemas/" + detailsMeta.TypeName,
-			}
-		}
-
-		// Create the typed error response schema
-		spec.Components.Schemas[schemaName] = &openapi.Schema{
-			Type:       openapi.NewSchemaType("object"),
-			Properties: properties,
-			Required:   []string{"code", "message"},
 		}
 	}
 
@@ -770,7 +756,7 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 
 		// Add error responses from handler's declared error definitions
 		for _, errDef := range handler.ErrorDefs() {
-			schemaName := errorCodeToSchemaName(errDef.Code()) + "ErrorResponse"
+			schemaName := "Err" + errorCodeToSchemaName(errDef.Code())
 			operation.Responses[fmt.Sprintf("%d", errDef.Status())] = openapi.Response{
 				Description: statusCodeToResponseName(errDef.Status()),
 				Content: map[string]openapi.MediaType{
@@ -792,28 +778,6 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 			operation.Security = append(operation.Security, openapi.SecurityRequirement{
 				"bearerAuth": allScopes, // Scopes for OAuth2/bearer tokens
 			})
-
-			// Add 401 Unauthorized error response
-			operation.Responses["401"] = openapi.Response{
-				Description: "Unauthorized",
-				Content: map[string]openapi.MediaType{
-					ContentTypeJSON: {
-						Schema: &openapi.Schema{Ref: "#/components/schemas/ErrorResponse"},
-					},
-				},
-			}
-
-			// Add 403 Forbidden error response if handler has scope/role requirements
-			if len(handlerSpec.ScopeGroups) > 0 || len(handlerSpec.RoleGroups) > 0 {
-				operation.Responses["403"] = openapi.Response{
-					Description: "Forbidden - insufficient permissions",
-					Content: map[string]openapi.MediaType{
-						ContentTypeJSON: {
-							Schema: &openapi.Schema{Ref: "#/components/schemas/ErrorResponse"},
-						},
-					},
-				}
-			}
 		}
 
 		// Set operation on path item

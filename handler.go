@@ -43,8 +43,8 @@ type Handler[In, Out any] struct {
 	InputMeta  sentinel.Metadata
 	OutputMeta sentinel.Metadata
 
-	// Error definitions with schemas for OpenAPI generation.
-	errorDefs []ErrorDefinition
+	// Error definitions with schemas for OpenAPI generation, keyed by error code.
+	errorDefs map[string]ErrorDefinition
 
 	// Validation flags (checked once at creation time).
 	inputValidatable  bool // True if In implements Validatable.
@@ -361,6 +361,7 @@ func NewHandler[In, Out any](name string, method, path string, fn func(*Request[
 		codec:             defaultCodec,
 		InputMeta:         inputMeta,
 		OutputMeta:        outputMeta,
+		errorDefs:         make(map[string]ErrorDefinition),
 		inputValidatable:  inputValidatable,
 		outputValidatable: outputValidatable,
 		inputEntryable:    inputEntryable,
@@ -479,9 +480,12 @@ func (h *Handler[In, Out]) WithResponseHeaders(headers map[string]string) *Handl
 // Undeclared errors will be converted to 500 Internal Server Error.
 // This is used for OpenAPI documentation generation with proper error schemas.
 func (h *Handler[In, Out]) WithErrors(errs ...ErrorDefinition) *Handler[In, Out] {
-	h.errorDefs = append(h.errorDefs, errs...)
-	// Also populate ErrorCodes for spec serialization
 	for _, err := range errs {
+		h.errorDefs[err.Code()] = err
+	}
+	// Rebuild ErrorCodes from deduplicated map
+	h.spec.ErrorCodes = make([]int, 0, len(h.errorDefs))
+	for _, err := range h.errorDefs {
 		h.spec.ErrorCodes = append(h.spec.ErrorCodes, err.Status())
 	}
 	return h
@@ -490,7 +494,11 @@ func (h *Handler[In, Out]) WithErrors(errs ...ErrorDefinition) *Handler[In, Out]
 // ErrorDefs returns the declared error definitions for this handler.
 // Used by OpenAPI generation to extract error schemas.
 func (h *Handler[In, Out]) ErrorDefs() []ErrorDefinition {
-	return h.errorDefs
+	defs := make([]ErrorDefinition, 0, len(h.errorDefs))
+	for _, def := range h.errorDefs {
+		defs = append(defs, def)
+	}
+	return defs
 }
 
 // WithMaxBodySize sets the maximum request body size in bytes for this handler.
@@ -601,12 +609,8 @@ type errorResponse struct {
 // isErrorDeclared checks if an error was declared via WithErrors.
 // Matches by error code (e.g., "NOT_FOUND"), not just status code.
 func (h *Handler[In, Out]) isErrorDeclared(err ErrorDefinition) bool {
-	for _, declared := range h.errorDefs {
-		if declared.Code() == err.Code() {
-			return true
-		}
-	}
-	return false
+	_, exists := h.errorDefs[err.Code()]
+	return exists
 }
 
 // writeError writes a structured error response using the specified content type.

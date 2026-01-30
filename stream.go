@@ -124,7 +124,7 @@ type StreamHandler[In, Out any] struct {
 	OutputMeta sentinel.Metadata
 
 	// Error definitions with schemas for OpenAPI generation.
-	errorDefs []ErrorDefinition
+	errorDefs map[string]ErrorDefinition
 
 	// Validation flag (checked once at creation time).
 	inputValidatable bool // True if In implements Validatable.
@@ -286,7 +286,11 @@ func (h *StreamHandler[In, Out]) Spec() HandlerSpec {
 
 // ErrorDefs implements Endpoint.
 func (h *StreamHandler[In, Out]) ErrorDefs() []ErrorDefinition {
-	return h.errorDefs
+	defs := make([]ErrorDefinition, 0, len(h.errorDefs))
+	for _, def := range h.errorDefs {
+		defs = append(defs, def)
+	}
+	return defs
 }
 
 // Middleware implements Endpoint.
@@ -327,6 +331,7 @@ func NewStreamHandler[In, Out any](name string, method, path string, fn func(*Re
 			Tags:           []string{},
 			IsStream:       true,
 		},
+		errorDefs:        make(map[string]ErrorDefinition),
 		InputMeta:        inputMeta,
 		OutputMeta:       outputMeta,
 		inputValidatable: inputValidatable,
@@ -367,8 +372,12 @@ func (h *StreamHandler[In, Out]) WithQueryParams(params ...string) *StreamHandle
 // WithErrors declares which errors this handler may return.
 // Note: Errors can only be returned before the stream starts.
 func (h *StreamHandler[In, Out]) WithErrors(errs ...ErrorDefinition) *StreamHandler[In, Out] {
-	h.errorDefs = append(h.errorDefs, errs...)
 	for _, err := range errs {
+		h.errorDefs[err.Code()] = err
+	}
+	// Rebuild ErrorCodes from deduplicated map
+	h.spec.ErrorCodes = make([]int, 0, len(h.errorDefs))
+	for _, err := range h.errorDefs {
 		h.spec.ErrorCodes = append(h.spec.ErrorCodes, err.Status())
 	}
 	return h
