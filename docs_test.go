@@ -305,17 +305,179 @@ func TestGenerateOpenAPI(t *testing.T) {
 		t.Error("expected schemas in components")
 	}
 
-	// Check standard error response schema
-	if _, exists := spec.Components.Schemas["ErrorResponse"]; !exists {
-		t.Error("expected ErrorResponse schema")
+	// Check typed error schemas from declared errors
+	if _, exists := spec.Components.Schemas["ErrBadRequest"]; !exists {
+		t.Error("expected ErrBadRequest schema")
+	}
+	if _, exists := spec.Components.Schemas["ErrNotFound"]; !exists {
+		t.Error("expected ErrNotFound schema")
+	}
+}
+
+func TestGenerateOpenAPI_ErrorSchemaStructure(t *testing.T) {
+	engine := newTestEngine()
+
+	handler := NewHandler[NoBody, testOutput](
+		"get-test",
+		"GET",
+		"/test",
+		func(req *Request[NoBody]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	).WithErrors(ErrBadRequest, ErrNotFound)
+
+	engine.WithHandlers(handler)
+	spec := engine.GenerateOpenAPI(nil)
+
+	t.Run("code field has const value", func(t *testing.T) {
+		schema := spec.Components.Schemas["ErrBadRequest"]
+		if schema == nil {
+			t.Fatal("expected ErrBadRequest schema")
+		}
+		codeSchema := schema.Properties["code"]
+		if codeSchema == nil {
+			t.Fatal("expected code property")
+		}
+		if codeSchema.Const != "BAD_REQUEST" {
+			t.Errorf("expected code const 'BAD_REQUEST', got %v", codeSchema.Const)
+		}
+
+		schema = spec.Components.Schemas["ErrNotFound"]
+		if schema == nil {
+			t.Fatal("expected ErrNotFound schema")
+		}
+		codeSchema = schema.Properties["code"]
+		if codeSchema == nil {
+			t.Fatal("expected code property")
+		}
+		if codeSchema.Const != "NOT_FOUND" {
+			t.Errorf("expected code const 'NOT_FOUND', got %v", codeSchema.Const)
+		}
+	})
+
+	t.Run("required fields", func(t *testing.T) {
+		schema := spec.Components.Schemas["ErrBadRequest"]
+		if schema == nil {
+			t.Fatal("expected ErrBadRequest schema")
+		}
+		hasCode, hasMessage := false, false
+		for _, r := range schema.Required {
+			if r == "code" {
+				hasCode = true
+			}
+			if r == "message" {
+				hasMessage = true
+			}
+		}
+		if !hasCode || !hasMessage {
+			t.Errorf("expected code and message in required, got %v", schema.Required)
+		}
+	})
+
+	t.Run("details inlined as object", func(t *testing.T) {
+		schema := spec.Components.Schemas["ErrNotFound"]
+		if schema == nil {
+			t.Fatal("expected ErrNotFound schema")
+		}
+		details := schema.Properties["details"]
+		if details == nil {
+			t.Fatal("expected details property")
+		}
+		if details.Ref != "" {
+			t.Errorf("expected details to be inlined, got $ref %q", details.Ref)
+		}
+		if details.Type == nil || details.Type.String() != "object" {
+			t.Error("expected details to be an object type")
+		}
+		if _, exists := details.Properties["resource"]; !exists {
+			t.Error("expected details to have 'resource' property from NotFoundDetails")
+		}
+	})
+
+	t.Run("no separate details models registered", func(t *testing.T) {
+		for name := range spec.Components.Schemas {
+			if name == "BadRequestDetails" || name == "NotFoundDetails" {
+				t.Errorf("details type %q should not be registered as a separate schema", name)
+			}
+		}
+	})
+
+	t.Run("no base ErrorResponse schema", func(t *testing.T) {
+		if _, exists := spec.Components.Schemas["ErrorResponse"]; exists {
+			t.Error("ErrorResponse base schema should not be registered")
+		}
+	})
+}
+
+func TestGenerateOpenAPI_CustomErrorSchema(t *testing.T) {
+	type TeapotDetails struct {
+		TeaType string `json:"tea_type" description:"The type of tea requested"`
+		Temp    int    `json:"temp" description:"Temperature in celsius"`
 	}
 
-	// Check typed error schemas from declared errors
-	if _, exists := spec.Components.Schemas["BadRequestErrorResponse"]; !exists {
-		t.Error("expected BadRequestErrorResponse schema")
+	errTeapot := NewError[TeapotDetails]("TEAPOT", 418, "I'm a teapot")
+
+	engine := newTestEngine()
+	handler := NewHandler[NoBody, testOutput](
+		"brew",
+		"POST",
+		"/brew",
+		func(req *Request[NoBody]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	).WithErrors(errTeapot)
+
+	engine.WithHandlers(handler)
+	spec := engine.GenerateOpenAPI(nil)
+
+	schema := spec.Components.Schemas["ErrTeapot"]
+	if schema == nil {
+		t.Fatal("expected ErrTeapot schema")
 	}
-	if _, exists := spec.Components.Schemas["NotFoundErrorResponse"]; !exists {
-		t.Error("expected NotFoundErrorResponse schema")
+	if schema.Properties["code"].Const != "TEAPOT" {
+		t.Errorf("expected code const 'TEAPOT', got %v", schema.Properties["code"].Const)
+	}
+	details := schema.Properties["details"]
+	if details == nil {
+		t.Fatal("expected details property")
+	}
+	if _, exists := details.Properties["tea_type"]; !exists {
+		t.Error("expected details to have 'tea_type' property")
+	}
+	if _, exists := details.Properties["temp"]; !exists {
+		t.Error("expected details to have 'temp' property")
+	}
+}
+
+func TestGenerateOpenAPI_ErrorDeduplication(t *testing.T) {
+	engine := newTestEngine()
+
+	// Declare the same error twice via separate WithErrors calls
+	handler := NewHandler[NoBody, testOutput](
+		"test",
+		"GET",
+		"/test",
+		func(req *Request[NoBody]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	).WithErrors(ErrBadRequest).WithErrors(ErrBadRequest, ErrNotFound)
+
+	engine.WithHandlers(handler)
+	spec := engine.GenerateOpenAPI(nil)
+
+	// Should have exactly 2 error responses (400, 404) plus 200
+	pathItem := spec.Paths["/test"]
+	if pathItem.Get == nil {
+		t.Fatal("expected GET operation")
+	}
+	if len(pathItem.Get.Responses) != 3 {
+		t.Errorf("expected 3 responses (200, 400, 404), got %d", len(pathItem.Get.Responses))
+	}
+
+	// ErrorCodes on spec should also be deduplicated
+	handlerSpec := handler.Spec()
+	if len(handlerSpec.ErrorCodes) != 2 {
+		t.Errorf("expected 2 error codes, got %d", len(handlerSpec.ErrorCodes))
 	}
 }
 
