@@ -715,7 +715,7 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 		// Add request body if not NoBody
 		if handlerSpec.InputTypeName != "NoBody" {
 			// Recursively collect input type and all nested types
-			if inputMeta, found := sentinel.Lookup(handlerSpec.InputTypeName); found {
+			if inputMeta, found := sentinel.Lookup(handlerSpec.InputTypeFQDN); found {
 				collectSchemas(inputMeta)
 			}
 
@@ -735,7 +735,7 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 
 		// Add success response
 		// Recursively collect output type and all nested types
-		if outputMeta, found := sentinel.Lookup(handlerSpec.OutputTypeName); found {
+		if outputMeta, found := sentinel.Lookup(handlerSpec.OutputTypeFQDN); found {
 			collectSchemas(outputMeta)
 		}
 
