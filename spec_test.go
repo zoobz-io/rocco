@@ -88,6 +88,9 @@ func TestEngineSpec_Serialization(t *testing.T) {
 		Tags: []openapi.Tag{
 			{Name: "users", Description: "User operations"},
 		},
+		TagGroups: []openapi.TagGroup{
+			{Name: "Account", Tags: []string{"users", "auth"}},
+		},
 		Servers: []openapi.Server{
 			{URL: "https://api.example.com"},
 		},
@@ -111,6 +114,15 @@ func TestEngineSpec_Serialization(t *testing.T) {
 	}
 	if len(decoded.Tags) != len(spec.Tags) {
 		t.Errorf("Tags length = %d, want %d", len(decoded.Tags), len(spec.Tags))
+	}
+	if len(decoded.TagGroups) != 1 {
+		t.Errorf("TagGroups length = %d, want 1", len(decoded.TagGroups))
+	}
+	if decoded.TagGroups[0].Name != "Account" {
+		t.Errorf("TagGroups[0].Name = %q, want %q", decoded.TagGroups[0].Name, "Account")
+	}
+	if len(decoded.TagGroups[0].Tags) != 2 {
+		t.Errorf("TagGroups[0].Tags length = %d, want 2", len(decoded.TagGroups[0].Tags))
 	}
 	if len(decoded.Servers) != len(spec.Servers) {
 		t.Errorf("Servers length = %d, want %d", len(decoded.Servers), len(spec.Servers))

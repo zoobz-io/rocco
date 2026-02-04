@@ -1276,6 +1276,39 @@ func TestGenerateOpenAPI_WithTags(t *testing.T) {
 	}
 }
 
+// TestGenerateOpenAPI_WithTagGroups tests that tag groups appear in generated spec
+func TestGenerateOpenAPI_WithTagGroups(t *testing.T) {
+	engine := NewEngine()
+	engine.WithTag("auth", "Authentication endpoints")
+	engine.WithTag("users", "User management endpoints")
+	engine.WithTagGroup("Account", "auth", "users")
+
+	handler := NewHandler[NoBody, testOutput](
+		"get-user",
+		"GET",
+		"/users",
+		func(req *Request[NoBody]) (testOutput, error) {
+			return testOutput{Message: "user"}, nil
+		},
+	).WithTags("users")
+
+	engine.WithHandlers(handler)
+	spec := engine.GenerateOpenAPI(nil)
+
+	if len(spec.TagGroups) != 1 {
+		t.Fatalf("expected 1 tag group, got %d", len(spec.TagGroups))
+	}
+	if spec.TagGroups[0].Name != "Account" {
+		t.Errorf("expected tag group name 'Account', got %q", spec.TagGroups[0].Name)
+	}
+	if len(spec.TagGroups[0].Tags) != 2 {
+		t.Errorf("expected 2 tags in group, got %d", len(spec.TagGroups[0].Tags))
+	}
+	if spec.TagGroups[0].Tags[0] != "auth" || spec.TagGroups[0].Tags[1] != "users" {
+		t.Errorf("expected tags [auth, users], got %v", spec.TagGroups[0].Tags)
+	}
+}
+
 type mockIdentity struct {
 	scopes []string
 	roles  []string

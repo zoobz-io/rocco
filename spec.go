@@ -49,6 +49,9 @@ type EngineSpec struct {
 	// Global Tags with descriptions
 	Tags []openapi.Tag `json:"tags,omitempty" yaml:"tags,omitempty"`
 
+	// Tag Groups for hierarchical tag organization (x-tagGroups vendor extension)
+	TagGroups []openapi.TagGroup `json:"x-tagGroups,omitempty" yaml:"x-tagGroups,omitempty"`
+
 	// Servers
 	Servers []openapi.Server `json:"servers,omitempty" yaml:"servers,omitempty"`
 

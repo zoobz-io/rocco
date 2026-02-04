@@ -561,7 +561,8 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 		OpenAPI: "3.1.0",
 		Info:    e.spec.Info,
 		Tags:    e.spec.Tags,
-		Servers: e.spec.Servers,
+		Servers:   e.spec.Servers,
+		TagGroups: e.spec.TagGroups,
 		Paths:   make(map[string]openapi.PathItem),
 		Components: &openapi.Components{
 			Schemas:   make(map[string]*openapi.Schema),
