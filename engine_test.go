@@ -505,6 +505,69 @@ func TestEngine_WithTag_MultipleTags(t *testing.T) {
 	}
 }
 
+func TestEngine_WithTagGroup(t *testing.T) {
+	engine := newTestEngine()
+
+	result := engine.WithTagGroup("Account", "Authentication", "Users")
+
+	// Should return engine for chaining
+	if result != engine {
+		t.Error("WithTagGroup should return the engine for chaining")
+	}
+
+	// Verify tag group was added
+	if len(engine.spec.TagGroups) != 1 {
+		t.Fatalf("expected 1 tag group, got %d", len(engine.spec.TagGroups))
+	}
+	if engine.spec.TagGroups[0].Name != "Account" {
+		t.Errorf("expected name 'Account', got %q", engine.spec.TagGroups[0].Name)
+	}
+	if len(engine.spec.TagGroups[0].Tags) != 2 {
+		t.Errorf("expected 2 tags, got %d", len(engine.spec.TagGroups[0].Tags))
+	}
+}
+
+func TestEngine_WithTagGroup_UpdateExisting(t *testing.T) {
+	engine := newTestEngine()
+
+	engine.WithTagGroup("Account", "Authentication", "Users")
+	engine.WithTagGroup("Account", "Sessions", "Profiles")
+
+	if len(engine.spec.TagGroups) != 1 {
+		t.Fatalf("expected 1 tag group, got %d", len(engine.spec.TagGroups))
+	}
+	if len(engine.spec.TagGroups[0].Tags) != 2 {
+		t.Fatalf("expected 2 tags, got %d", len(engine.spec.TagGroups[0].Tags))
+	}
+	if engine.spec.TagGroups[0].Tags[0] != "Sessions" || engine.spec.TagGroups[0].Tags[1] != "Profiles" {
+		t.Errorf("expected tags [Sessions, Profiles], got %v", engine.spec.TagGroups[0].Tags)
+	}
+}
+
+func TestEngine_WithTagGroup_MultipleGroups(t *testing.T) {
+	engine := newTestEngine()
+
+	engine.
+		WithTagGroup("Account", "Authentication", "Users").
+		WithTagGroup("Data", "Repositories", "Versions").
+		WithTagGroup("Intelligence", "Search", "Code Intelligence")
+
+	if len(engine.spec.TagGroups) != 3 {
+		t.Fatalf("expected 3 tag groups, got %d", len(engine.spec.TagGroups))
+	}
+
+	groupNames := make(map[string]bool)
+	for _, group := range engine.spec.TagGroups {
+		groupNames[group.Name] = true
+	}
+
+	for _, expected := range []string{"Account", "Data", "Intelligence"} {
+		if !groupNames[expected] {
+			t.Errorf("missing tag group %q", expected)
+		}
+	}
+}
+
 // Tests for default handlers (/openapi and /docs)
 
 func TestEngine_DefaultHandlers_OpenAPI(t *testing.T) {

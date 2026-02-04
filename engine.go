@@ -117,6 +117,24 @@ func (e *Engine) WithTag(name, description string) *Engine {
 	return e
 }
 
+// WithTagGroup adds a tag group for hierarchical tag organization.
+// Tag groups are rendered via the x-tagGroups vendor extension.
+func (e *Engine) WithTagGroup(name string, tags ...string) *Engine {
+	// Check if group already exists and update it
+	for i, group := range e.spec.TagGroups {
+		if group.Name == name {
+			e.spec.TagGroups[i].Tags = tags
+			return e
+		}
+	}
+	// Add new group
+	e.spec.TagGroups = append(e.spec.TagGroups, openapi.TagGroup{
+		Name: name,
+		Tags: tags,
+	})
+	return e
+}
+
 // Router returns the underlying http.ServeMux for advanced use cases.
 // This allows power users to register custom routes that won't appear in OpenAPI documentation.
 func (e *Engine) Router() *http.ServeMux {
