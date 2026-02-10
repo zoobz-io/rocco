@@ -8,7 +8,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/zoobzio/capitan v1.0.0
 	github.com/zoobzio/clockz v1.0.0
-	github.com/zoobzio/rocco v1.0.0
+	github.com/zoobzio/rocco v0.1.13
 )
 
 require (
