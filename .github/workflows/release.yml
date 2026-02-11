@@ -89,6 +89,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # PAT required to push tags referencing commits with workflow changes
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Get release version
         id: version
