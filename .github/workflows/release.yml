@@ -33,9 +33,29 @@ jobs:
         go mod tidy
         git diff --exit-code go.mod go.sum
 
+  tag-submodules:
+    name: Tag Submodules
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Tag auth0 submodule
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        if git ls-remote --exit-code --tags origin "refs/tags/auth0/${VERSION}" >/dev/null 2>&1; then
+          echo "Tag auth0/${VERSION} already exists, skipping"
+          exit 0
+        fi
+        git tag "auth0/${VERSION}"
+        git push origin "auth0/${VERSION}"
+        echo "Created tag auth0/${VERSION}"
+
   release:
     name: Release
-    needs: validate
+    needs: tag-submodules
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -57,31 +77,9 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
-  tag-submodules:
-    name: Tag Submodules
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        # PAT required to push tags referencing commits with workflow changes
-        token: ${{ secrets.RELEASE_TOKEN }}
-
-    - name: Tag auth0 submodule
-      run: |
-        VERSION=${GITHUB_REF#refs/tags/}
-        if git ls-remote --exit-code --tags origin "refs/tags/auth0/${VERSION}" >/dev/null 2>&1; then
-          echo "Tag auth0/${VERSION} already exists, skipping"
-          exit 0
-        fi
-        git tag "auth0/${VERSION}"
-        git push origin "auth0/${VERSION}"
-        echo "Created tag auth0/${VERSION}"
-
   verify:
     name: Verify
-    needs: [release, tag-submodules]
+    needs: release
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go
