@@ -4,30 +4,31 @@
 *.dll
 *.so
 *.dylib
+
+# Test files
 *.test
-
-# Build artifacts
-dist/
-.dist/
-
-# Test coverage
 *.out
 coverage.out
 coverage.html
 coverage.txt
+
+# Profiling
 *.prof
+*.pprof
 
 # IDE
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
-*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Temporary files
-tmp/
-temp/
+# Build
+dist/
+vendor/
+
+# Claude
+.claude/

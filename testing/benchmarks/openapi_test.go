@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/zoobzio/rocco"
+	"github.com/zoobz-io/rocco"
 )
 
 // BenchmarkOpenAPI_Generation benchmarks OpenAPI spec generation.

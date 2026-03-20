@@ -1,6 +1,6 @@
 package session
 
-import "github.com/zoobzio/rocco"
+import "github.com/zoobz-io/rocco"
 
 // Identity implements [rocco.Identity] backed by session [Data].
 type Identity struct {

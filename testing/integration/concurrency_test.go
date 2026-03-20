@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zoobzio/rocco"
+	"github.com/zoobz-io/rocco"
 )
 
 type counterOutput struct {

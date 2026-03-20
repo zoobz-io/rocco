@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/zoobzio/rocco"
+	"github.com/zoobz-io/rocco"
 )
 
 type benchStreamEvent struct {

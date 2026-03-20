@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/zoobzio/check"
-	"github.com/zoobzio/rocco"
+	"github.com/zoobz-io/check"
+	"github.com/zoobz-io/rocco"
 )
 
 // Domain types for real-world scenarios.

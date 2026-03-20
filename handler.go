@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/zoobzio/capitan"
-	"github.com/zoobzio/check"
-	"github.com/zoobzio/sentinel"
+	"github.com/zoobz-io/capitan"
+	"github.com/zoobz-io/check"
+	"github.com/zoobz-io/sentinel"
 )
 
 // UsageLimit represents a usage limit check with a dynamic threshold callback.

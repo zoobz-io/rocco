@@ -5,7 +5,7 @@ Cookie-based session management for rocco APIs.
 ## Installation
 
 ```bash
-go get github.com/zoobzio/rocco/session
+go get github.com/zoobz-io/rocco/session
 ```
 
 ## Usage

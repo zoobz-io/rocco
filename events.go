@@ -1,6 +1,6 @@
 package rocco
 
-import "github.com/zoobzio/capitan"
+import "github.com/zoobz-io/capitan"
 
 // Engine lifecycle signals.
 var (

@@ -40,8 +40,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/zoobzio/clockz"
-	"github.com/zoobzio/rocco"
+	"github.com/zoobz-io/clockz"
+	"github.com/zoobz-io/rocco"
 )
 
 // Config holds Auth0 integration settings.

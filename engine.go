@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zoobzio/capitan"
-	"github.com/zoobzio/openapi"
+	"github.com/zoobz-io/capitan"
+	"github.com/zoobz-io/openapi"
 )
 
 // chain wraps a handler with middleware (applied in reverse order).

@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/zoobzio/capitan"
-	"github.com/zoobzio/sentinel"
+	"github.com/zoobz-io/capitan"
+	"github.com/zoobz-io/sentinel"
 )
 
 // Stream provides a typed interface for sending SSE events.

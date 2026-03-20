@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/zoobzio/capitan"
-	"github.com/zoobzio/clockz"
-	"github.com/zoobzio/rocco"
+	"github.com/zoobz-io/capitan"
+	"github.com/zoobz-io/clockz"
+	"github.com/zoobz-io/rocco"
 )
 
 // TestMain sets up capitan in sync mode for all tests.

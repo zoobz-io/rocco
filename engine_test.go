@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zoobzio/openapi"
+	"github.com/zoobz-io/openapi"
 )
 
 // newTestEngine creates an engine for testing without authentication.

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/zoobzio/rocco"
+	"github.com/zoobz-io/rocco"
 )
 
 func TestResponseCapture(t *testing.T) {

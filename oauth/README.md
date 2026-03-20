@@ -5,7 +5,7 @@ OAuth 2.0 authorization code flow primitives.
 ## Installation
 
 ```bash
-go get github.com/zoobzio/rocco/oauth
+go get github.com/zoobz-io/rocco/oauth
 ```
 
 ## Usage

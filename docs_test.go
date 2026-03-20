@@ -3,8 +3,8 @@ package rocco
 import (
 	"testing"
 
-	"github.com/zoobzio/openapi"
-	"github.com/zoobzio/sentinel"
+	"github.com/zoobz-io/openapi"
+	"github.com/zoobz-io/sentinel"
 )
 
 func TestMetadataToSchema(t *testing.T) {

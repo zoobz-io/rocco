@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/zoobzio/openapi"
+	"github.com/zoobz-io/openapi"
 )
 
 func TestHandlerSpec_Serialization(t *testing.T) {

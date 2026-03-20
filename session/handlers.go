@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/zoobzio/rocco"
-	"github.com/zoobzio/rocco/oauth"
+	"github.com/zoobz-io/rocco"
+	"github.com/zoobz-io/rocco/oauth"
 )
 
 // NewLoginHandler creates a GET handler that initiates the OAuth login flow.

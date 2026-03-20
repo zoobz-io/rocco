@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/zoobzio/rocco"
+	"github.com/zoobz-io/rocco"
 )
 
 // ResponseCapture wraps httptest.ResponseRecorder with convenient access methods.
