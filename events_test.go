@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zoobzio/capitan"
-	"github.com/zoobzio/check"
+	"github.com/zoobz-io/capitan"
+	"github.com/zoobz-io/check"
 )
 
 // TestMain sets up capitan in sync mode for all tests.

@@ -38,7 +38,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zoobzio/rocco/oauth"
+	"github.com/zoobz-io/rocco/oauth"
 )
 
 // Config holds all session configuration for an OAuth-backed session flow.

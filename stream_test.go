@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zoobzio/check"
+	"github.com/zoobz-io/check"
 )
 
 type streamEvent struct {

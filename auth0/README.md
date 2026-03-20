@@ -5,7 +5,7 @@ Auth0 JWT authentication for rocco APIs.
 ## Installation
 
 ```bash
-go get github.com/zoobzio/rocco/auth0
+go get github.com/zoobz-io/rocco/auth0
 ```
 
 ## Usage

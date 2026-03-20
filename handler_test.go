@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zoobzio/check"
+	"github.com/zoobz-io/check"
 )
 
 // failingValidatableInput implements Validatable and always fails using check.

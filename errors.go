@@ -3,7 +3,7 @@ package rocco
 import (
 	"fmt"
 
-	"github.com/zoobzio/sentinel"
+	"github.com/zoobz-io/sentinel"
 )
 
 // ErrorDefinition is the interface that all error definitions satisfy.

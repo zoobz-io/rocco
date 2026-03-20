@@ -1,6 +1,6 @@
 package rocco
 
-import "github.com/zoobzio/openapi"
+import "github.com/zoobz-io/openapi"
 
 // HandlerSpec contains declarative configuration for a route handler.
 // This spec is serializable and represents all metadata about a handler

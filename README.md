@@ -1,13 +1,13 @@
 # rocco
 
-[![CI Status](https://github.com/zoobzio/rocco/workflows/CI/badge.svg)](https://github.com/zoobzio/rocco/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/zoobzio/rocco/graph/badge.svg?branch=main)](https://codecov.io/gh/zoobzio/rocco)
-[![Go Report Card](https://goreportcard.com/badge/github.com/zoobzio/rocco)](https://goreportcard.com/report/github.com/zoobzio/rocco)
-[![CodeQL](https://github.com/zoobzio/rocco/workflows/CodeQL/badge.svg)](https://github.com/zoobzio/rocco/security/code-scanning)
-[![Go Reference](https://pkg.go.dev/badge/github.com/zoobzio/rocco.svg)](https://pkg.go.dev/github.com/zoobzio/rocco)
-[![License](https://img.shields.io/github/license/zoobzio/rocco)](LICENSE)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/zoobzio/rocco)](go.mod)
-[![Release](https://img.shields.io/github/v/release/rocco)](https://github.com/zoobzio/rocco/releases)
+[![CI Status](https://github.com/zoobz-io/rocco/workflows/CI/badge.svg)](https://github.com/zoobz-io/rocco/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/zoobz-io/rocco/graph/badge.svg?branch=main)](https://codecov.io/gh/zoobz-io/rocco)
+[![Go Report Card](https://goreportcard.com/badge/github.com/zoobz-io/rocco)](https://goreportcard.com/report/github.com/zoobz-io/rocco)
+[![CodeQL](https://github.com/zoobz-io/rocco/workflows/CodeQL/badge.svg)](https://github.com/zoobz-io/rocco/security/code-scanning)
+[![Go Reference](https://pkg.go.dev/badge/github.com/zoobz-io/rocco.svg)](https://pkg.go.dev/github.com/zoobz-io/rocco)
+[![License](https://img.shields.io/github/license/zoobz-io/rocco)](LICENSE)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/zoobz-io/rocco)](go.mod)
+[![Release](https://img.shields.io/github/v/release/rocco)](https://github.com/zoobz-io/rocco/releases)
 
 Type-safe HTTP framework for Go with automatic OpenAPI generation.
 
@@ -44,7 +44,7 @@ Your types define the contract. Rocco handles validation, serialization, error r
 ## Install
 
 ```bash
-go get github.com/zoobzio/rocco
+go get github.com/zoobz-io/rocco
 ```
 
 Requires Go 1.24+.
@@ -57,8 +57,8 @@ package main
 import (
     "fmt"
 
-    "github.com/zoobzio/openapi"
-    "github.com/zoobzio/rocco"
+    "github.com/zoobz-io/openapi"
+    "github.com/zoobz-io/rocco"
 )
 
 type CreateUserInput struct {
@@ -121,7 +121,7 @@ func main() {
 - **Self-documenting** — OpenAPI specs generated from the same types that validate requests
 - **Explicit** — No magic, no hidden behaviors, no struct tag DSLs for routing
 - **Chi-powered** — Built on the battle-tested Chi router with full middleware compatibility
-- **Observable** — Lifecycle events via [capitan](https://github.com/zoobzio/capitan) for metrics and tracing
+- **Observable** — Lifecycle events via [capitan](https://github.com/zoobz-io/capitan) for metrics and tracing
 - **Streaming-native** — First-class SSE support with typed event streams
 
 ## Contract-First by Default

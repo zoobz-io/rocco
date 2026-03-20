@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zoobzio/check"
+	"github.com/zoobz-io/check"
 )
 
 func TestNewValidationError(t *testing.T) {

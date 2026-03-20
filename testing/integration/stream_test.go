@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zoobzio/check"
-	"github.com/zoobzio/rocco"
-	rtesting "github.com/zoobzio/rocco/testing"
+	"github.com/zoobz-io/check"
+	"github.com/zoobz-io/rocco"
+	rtesting "github.com/zoobz-io/rocco/testing"
 )
 
 // Test types for streaming.

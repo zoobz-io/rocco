@@ -1,14 +1,22 @@
 repository:
   name: rocco
   description: Type-safe HTTP framework for Go with automatic OpenAPI generation
-  homepage: https://github.com/zoobzio/rocco
-  has_wiki: true
+  homepage: https://rocco.zoobz.io
+  has_wiki: false
   has_downloads: true
   default_branch: main
   allow_squash_merge: true
   allow_merge_commit: false
   allow_rebase_merge: false
   delete_branch_on_merge: true
+
+labels:
+  - name: bug
+    color: d73a4a
+  - name: enhancement
+    color: a2eeef
+  - name: documentation
+    color: 0075ca
 
 branches:
   - name: main

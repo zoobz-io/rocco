@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zoobzio/rocco/oauth"
+	"github.com/zoobz-io/rocco/oauth"
 )
 
 // failStore is a Store that returns errors for specified operations.
