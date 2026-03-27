@@ -16,6 +16,9 @@ func init() {
 	// Documentation-only tags
 	sentinel.Tag("example")
 	sentinel.Tag("description")
+	// Discriminated union tags
+	sentinel.Tag("discriminator")
+	sentinel.Tag("discriminate")
 }
 
 // parseFloat64 parses a string to *float64
@@ -347,6 +350,17 @@ func metadataToSchema(meta sentinel.Metadata) *openapi.Schema {
 		Properties: make(map[string]*openapi.Schema),
 	}
 
+	// First pass: collect discriminator mappings.
+	// discriminator:"fieldName" declares "I am the discriminator for fieldName"
+	// and provides the propertyName via its own json tag.
+	discriminators := make(map[string]string) // target field name -> discriminator json name
+	for _, field := range meta.Fields {
+		if target, ok := field.Tags["discriminator"]; ok && target != "" {
+			jsonName, _ := parseJSONTag(field)
+			discriminators[target] = jsonName
+		}
+	}
+
 	var required []string
 
 	for _, field := range meta.Fields {
@@ -357,8 +371,15 @@ func metadataToSchema(meta sentinel.Metadata) *openapi.Schema {
 			continue
 		}
 
-		// Convert field type to schema
-		fieldSchema := goTypeToSchema(field.Type)
+		var fieldSchema *openapi.Schema
+
+		// Check for discriminate tag — this field is a union
+		if discriminateTag, ok := field.Tags["discriminate"]; ok && discriminateTag != "" {
+			fieldSchema = buildDiscriminatedUnionSchema(propName, discriminateTag, discriminators)
+		} else {
+			// Convert field type to schema
+			fieldSchema = goTypeToSchema(field.Type)
+		}
 
 		// Apply OpenAPI tags to field schema
 		applyOpenAPITags(fieldSchema, field)
@@ -375,6 +396,49 @@ func metadataToSchema(meta sentinel.Metadata) *openapi.Schema {
 	}
 
 	return schema
+}
+
+// buildDiscriminatedUnionSchema creates a oneOf schema with discriminator for a union field.
+func buildDiscriminatedUnionSchema(propName string, discriminateTag string, discriminators map[string]string) *openapi.Schema {
+	typeNames := strings.Split(discriminateTag, ",")
+	oneOf := make([]*openapi.Schema, 0, len(typeNames))
+	mapping := make(map[string]string, len(typeNames))
+
+	for _, typeName := range typeNames {
+		typeName = strings.TrimSpace(typeName)
+		if typeName == "" {
+			continue
+		}
+		ref := "#/components/schemas/" + typeName
+		oneOf = append(oneOf, &openapi.Schema{Ref: ref})
+		mapping[typeName] = ref
+	}
+
+	schema := &openapi.Schema{
+		OneOf: oneOf,
+	}
+
+	// Attach discriminator if a paired discriminator tag targets this field
+	if discriminatorPropName, ok := discriminators[propName]; ok {
+		schema.Discriminator = &openapi.Discriminator{
+			PropertyName: discriminatorPropName,
+			Mapping:      mapping,
+		}
+	}
+
+	return schema
+}
+
+// resolveTypeName finds a sentinel Metadata entry by short type name,
+// searching all cached FQDNs for a suffix match.
+func resolveTypeName(shortName string) (sentinel.Metadata, bool) {
+	suffix := "." + shortName
+	for _, fqdn := range sentinel.Browse() {
+		if strings.HasSuffix(fqdn, suffix) {
+			return sentinel.Lookup(fqdn)
+		}
+	}
+	return sentinel.Metadata{}, false
 }
 
 // parseJSONTag extracts the JSON property name and determines if field is required
@@ -653,6 +717,26 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 				collectSchemas(relMeta)
 			}
 		}
+
+		// Discover types referenced by discriminate tags
+		for _, field := range meta.Fields {
+			if discriminateTag, ok := field.Tags["discriminate"]; ok && discriminateTag != "" {
+				for _, name := range strings.Split(discriminateTag, ",") {
+					name = strings.TrimSpace(name)
+					if name == "" || processedTypes[name] {
+						continue
+					}
+					if relMeta, found := resolveTypeName(name); found {
+						collectSchemas(relMeta)
+					}
+				}
+			}
+		}
+	}
+
+	// Collect standalone model schemas
+	for _, model := range e.models {
+		collectSchemas(model.meta)
 	}
 
 	// Iterate over registered handlers

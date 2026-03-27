@@ -1653,3 +1653,203 @@ func TestParseValidateTag_Combined(t *testing.T) {
 		t.Errorf("maximum = %v, want 100", *maxVal)
 	}
 }
+
+func TestBuildDiscriminatedUnionSchema(t *testing.T) {
+	discriminators := map[string]string{
+		"event": "type",
+	}
+
+	schema := buildDiscriminatedUnionSchema("event", "IngestCompletedEvent,IngestFailedEvent", discriminators)
+
+	t.Run("oneOf refs", func(t *testing.T) {
+		if len(schema.OneOf) != 2 {
+			t.Fatalf("expected 2 oneOf entries, got %d", len(schema.OneOf))
+		}
+		if schema.OneOf[0].Ref != "#/components/schemas/IngestCompletedEvent" {
+			t.Errorf("expected ref to IngestCompletedEvent, got %q", schema.OneOf[0].Ref)
+		}
+		if schema.OneOf[1].Ref != "#/components/schemas/IngestFailedEvent" {
+			t.Errorf("expected ref to IngestFailedEvent, got %q", schema.OneOf[1].Ref)
+		}
+	})
+
+	t.Run("discriminator", func(t *testing.T) {
+		if schema.Discriminator == nil {
+			t.Fatal("expected discriminator to be set")
+		}
+		if schema.Discriminator.PropertyName != "type" {
+			t.Errorf("expected propertyName 'type', got %q", schema.Discriminator.PropertyName)
+		}
+		if len(schema.Discriminator.Mapping) != 2 {
+			t.Fatalf("expected 2 mapping entries, got %d", len(schema.Discriminator.Mapping))
+		}
+		if schema.Discriminator.Mapping["IngestCompletedEvent"] != "#/components/schemas/IngestCompletedEvent" {
+			t.Errorf("unexpected mapping for IngestCompletedEvent: %q", schema.Discriminator.Mapping["IngestCompletedEvent"])
+		}
+	})
+}
+
+func TestBuildDiscriminatedUnionSchema_NoDiscriminator(t *testing.T) {
+	// When no discriminator tag targets this field, discriminator should be nil
+	schema := buildDiscriminatedUnionSchema("event", "TypeA,TypeB", map[string]string{})
+
+	if len(schema.OneOf) != 2 {
+		t.Fatalf("expected 2 oneOf entries, got %d", len(schema.OneOf))
+	}
+	if schema.Discriminator != nil {
+		t.Error("expected discriminator to be nil when no discriminator tag targets this field")
+	}
+}
+
+func TestMetadataToSchema_DiscriminatedUnion(t *testing.T) {
+	meta := sentinel.Metadata{
+		TypeName: "Notification",
+		Fields: []sentinel.FieldMetadata{
+			{
+				Name: "Type",
+				Type: "string",
+				Tags: map[string]string{
+					"json":          "type",
+					"discriminator": "event",
+				},
+			},
+			{
+				Name: "Event",
+				Type: "any",
+				Tags: map[string]string{
+					"json":          "event",
+					"discriminate":  "IngestCompletedEvent,IngestFailedEvent",
+				},
+			},
+		},
+	}
+
+	schema := metadataToSchema(meta)
+
+	t.Run("type field is normal string", func(t *testing.T) {
+		typeProp := schema.Properties["type"]
+		if typeProp == nil {
+			t.Fatal("expected 'type' property")
+		}
+		if typeProp.Type == nil || typeProp.Type.String() != "string" {
+			t.Errorf("expected string type, got %v", typeProp.Type)
+		}
+	})
+
+	t.Run("event field is oneOf with discriminator", func(t *testing.T) {
+		eventProp := schema.Properties["event"]
+		if eventProp == nil {
+			t.Fatal("expected 'event' property")
+		}
+		if len(eventProp.OneOf) != 2 {
+			t.Fatalf("expected 2 oneOf entries, got %d", len(eventProp.OneOf))
+		}
+		if eventProp.OneOf[0].Ref != "#/components/schemas/IngestCompletedEvent" {
+			t.Errorf("expected ref to IngestCompletedEvent, got %q", eventProp.OneOf[0].Ref)
+		}
+		if eventProp.Discriminator == nil {
+			t.Fatal("expected discriminator")
+		}
+		if eventProp.Discriminator.PropertyName != "type" {
+			t.Errorf("expected propertyName 'type', got %q", eventProp.Discriminator.PropertyName)
+		}
+	})
+
+	t.Run("both fields required", func(t *testing.T) {
+		if len(schema.Required) != 2 {
+			t.Errorf("expected 2 required fields, got %v", schema.Required)
+		}
+	})
+}
+
+func TestResolveTypeName(t *testing.T) {
+	// Scan a type so it's in sentinel's cache
+	_ = NewModel[testModelType]()
+
+	meta, found := resolveTypeName("testModelType")
+	if !found {
+		t.Fatal("expected to find testModelType via resolveTypeName")
+	}
+	if meta.TypeName != "testModelType" {
+		t.Errorf("expected type name 'testModelType', got %q", meta.TypeName)
+	}
+}
+
+func TestResolveTypeName_NotFound(t *testing.T) {
+	_, found := resolveTypeName("NonExistentType12345")
+	if found {
+		t.Error("expected resolveTypeName to return false for non-existent type")
+	}
+}
+
+func TestGenerateOpenAPI_DiscriminatedUnion(t *testing.T) {
+	type IngestCompletedEvent struct {
+		DocumentID   string `json:"document_id"`
+		DocumentName string `json:"document_name"`
+	}
+
+	type IngestFailedEvent struct {
+		DocumentID string `json:"document_id"`
+		Error      string `json:"error"`
+	}
+
+	type Notification struct {
+		Type  string `json:"type" discriminator:"event"`
+		Event any    `json:"event" discriminate:"IngestCompletedEvent,IngestFailedEvent"`
+	}
+
+	engine := newTestEngine()
+	engine.WithModels(
+		NewModel[IngestCompletedEvent](),
+		NewModel[IngestFailedEvent](),
+	)
+
+	handler := NewHandler[NoBody, Notification](
+		"get-notification",
+		"GET",
+		"/notifications/{id}",
+		func(req *Request[NoBody]) (Notification, error) {
+			return Notification{}, nil
+		},
+	).WithPathParams("id")
+
+	engine.WithHandlers(handler)
+	spec := engine.GenerateOpenAPI(nil)
+
+	t.Run("variant schemas registered", func(t *testing.T) {
+		if _, exists := spec.Components.Schemas["IngestCompletedEvent"]; !exists {
+			t.Error("expected IngestCompletedEvent in component schemas")
+		}
+		if _, exists := spec.Components.Schemas["IngestFailedEvent"]; !exists {
+			t.Error("expected IngestFailedEvent in component schemas")
+		}
+	})
+
+	t.Run("notification schema has oneOf", func(t *testing.T) {
+		notif := spec.Components.Schemas["Notification"]
+		if notif == nil {
+			t.Fatal("expected Notification schema")
+		}
+		eventProp := notif.Properties["event"]
+		if eventProp == nil {
+			t.Fatal("expected 'event' property on Notification")
+		}
+		if len(eventProp.OneOf) != 2 {
+			t.Fatalf("expected 2 oneOf entries, got %d", len(eventProp.OneOf))
+		}
+	})
+
+	t.Run("discriminator set correctly", func(t *testing.T) {
+		notif := spec.Components.Schemas["Notification"]
+		eventProp := notif.Properties["event"]
+		if eventProp.Discriminator == nil {
+			t.Fatal("expected discriminator on event property")
+		}
+		if eventProp.Discriminator.PropertyName != "type" {
+			t.Errorf("expected propertyName 'type', got %q", eventProp.Discriminator.PropertyName)
+		}
+		if len(eventProp.Discriminator.Mapping) != 2 {
+			t.Errorf("expected 2 mapping entries, got %d", len(eventProp.Discriminator.Mapping))
+		}
+	})
+}
