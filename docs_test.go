@@ -1701,6 +1701,21 @@ func TestBuildDiscriminatedUnionSchema_NoDiscriminator(t *testing.T) {
 	}
 }
 
+func TestBuildDiscriminatedUnionSchema_EmptyTypeNames(t *testing.T) {
+	// Empty and whitespace-only type names should be skipped
+	schema := buildDiscriminatedUnionSchema("event", "TypeA, ,TypeB, ", map[string]string{})
+
+	if len(schema.OneOf) != 2 {
+		t.Fatalf("expected 2 oneOf entries (empty names skipped), got %d", len(schema.OneOf))
+	}
+	if schema.OneOf[0].Ref != "#/components/schemas/TypeA" {
+		t.Errorf("expected ref to TypeA, got %q", schema.OneOf[0].Ref)
+	}
+	if schema.OneOf[1].Ref != "#/components/schemas/TypeB" {
+		t.Errorf("expected ref to TypeB, got %q", schema.OneOf[1].Ref)
+	}
+}
+
 func TestMetadataToSchema_DiscriminatedUnion(t *testing.T) {
 	meta := sentinel.Metadata{
 		TypeName: "Notification",
@@ -1779,6 +1794,45 @@ func TestResolveTypeName_NotFound(t *testing.T) {
 	_, found := resolveTypeName("NonExistentType12345")
 	if found {
 		t.Error("expected resolveTypeName to return false for non-existent type")
+	}
+}
+
+func TestGenerateOpenAPI_DiscriminatedUnionAutoDiscovery(t *testing.T) {
+	// Variant types are scanned by sentinel (via NewModel) but NOT registered
+	// with WithModels. They should still be discovered via resolveTypeName
+	// when collectSchemas processes the discriminate tag on the parent type.
+	type AutoEventA struct {
+		Status string `json:"status"`
+	}
+	type AutoEventB struct {
+		Reason string `json:"reason"`
+	}
+	type AutoParent struct {
+		Kind    string `json:"kind" discriminator:"payload"`
+		Payload any    `json:"payload" discriminate:"AutoEventA,AutoEventB"`
+	}
+
+	// Scan types into sentinel cache without WithModels
+	_ = NewModel[AutoEventA]()
+	_ = NewModel[AutoEventB]()
+
+	engine := newTestEngine()
+	handler := NewHandler[NoBody, AutoParent](
+		"get-auto",
+		"GET",
+		"/auto",
+		func(req *Request[NoBody]) (AutoParent, error) {
+			return AutoParent{}, nil
+		},
+	)
+	engine.WithHandlers(handler)
+	spec := engine.GenerateOpenAPI(nil)
+
+	if _, exists := spec.Components.Schemas["AutoEventA"]; !exists {
+		t.Error("expected AutoEventA discovered via resolveTypeName")
+	}
+	if _, exists := spec.Components.Schemas["AutoEventB"]; !exists {
+		t.Error("expected AutoEventB discovered via resolveTypeName")
 	}
 }
 
