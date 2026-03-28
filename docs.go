@@ -430,7 +430,9 @@ func buildDiscriminatedUnionSchema(propName string, discriminateTag string, disc
 }
 
 // resolveTypeName finds a sentinel Metadata entry by short type name,
-// searching all cached FQDNs for a suffix match.
+// searching all cached FQDNs for a suffix match. If multiple packages
+// register types with the same short name, the first match wins —
+// short names must be unique across packages for deterministic results.
 func resolveTypeName(shortName string) (sentinel.Metadata, bool) {
 	suffix := "." + shortName
 	for _, fqdn := range sentinel.Browse() {
