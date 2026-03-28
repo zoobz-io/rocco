@@ -28,6 +28,7 @@ type Engine struct {
 	mux                 *http.ServeMux
 	globalMiddleware    []func(http.Handler) http.Handler
 	handlers            []Endpoint // Registered handlers for OpenAPI generation
+	models              []*Model   // Standalone models for OpenAPI schema generation
 	extractIdentity     func(context.Context, *http.Request) (Identity, error)
 	ctx                 context.Context
 	cancel              context.CancelFunc
@@ -139,6 +140,14 @@ func (e *Engine) WithTagGroup(name string, tags ...string) *Engine {
 // This allows power users to register custom routes that won't appear in OpenAPI documentation.
 func (e *Engine) Router() *http.ServeMux {
 	return e.mux
+}
+
+// WithModels registers standalone types into the OpenAPI component schemas.
+// These types don't need to be handler input or output types — they are included
+// in the spec for use by features like discriminated unions or external references.
+func (e *Engine) WithModels(models ...*Model) *Engine {
+	e.models = append(e.models, models...)
+	return e
 }
 
 // WithHandlers adds one or more Endpoints to the engine and returns the engine for chaining.
