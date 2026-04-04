@@ -757,6 +757,20 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 		}
 	}
 
+	// Collect nested types referenced by error detail schemas.
+	// We don't call collectSchemas on the details type itself (it's inlined
+	// on the error schema), but we do need to collect its nested types.
+	for _, errDef := range errorDefs {
+		detailsMeta := errDef.DetailsMeta()
+		if detailsMeta.TypeName != "" && detailsMeta.TypeName != "NoDetails" {
+			for _, rel := range detailsMeta.Relationships {
+				if relMeta, found := sentinel.Lookup(rel.To); found {
+					collectSchemas(relMeta)
+				}
+			}
+		}
+	}
+
 	// Collect standalone model schemas
 	for _, model := range e.models {
 		if model.schema != nil {

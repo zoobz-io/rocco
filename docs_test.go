@@ -493,6 +493,48 @@ func TestGenerateOpenAPI_CustomErrorSchema(t *testing.T) {
 	}
 }
 
+func TestGenerateOpenAPI_ErrorDetailsNestedTypes(t *testing.T) {
+	type NestedField struct {
+		Code    string `json:"code" description:"Field error code"`
+		Message string `json:"message" description:"Field error message"`
+	}
+	type DetailsWithNested struct {
+		Fields []NestedField `json:"fields" description:"Per-field errors"`
+	}
+
+	errNested := NewError[DetailsWithNested]("NESTED_ERROR", 422, "has nested details")
+
+	engine := newTestEngine()
+	handler := NewHandler[NoBody, testOutput](
+		"nested",
+		"POST",
+		"/nested",
+		func(req *Request[NoBody]) (testOutput, error) {
+			return testOutput{}, nil
+		},
+	).WithErrors(errNested)
+
+	engine.WithHandlers(handler)
+	spec := engine.GenerateOpenAPI(nil)
+
+	// The nested type should be registered as a component schema
+	nestedSchema := spec.Components.Schemas["NestedField"]
+	if nestedSchema == nil {
+		t.Fatal("expected NestedField to be registered as a component schema")
+	}
+	if _, exists := nestedSchema.Properties["code"]; !exists {
+		t.Error("expected NestedField to have 'code' property")
+	}
+	if _, exists := nestedSchema.Properties["message"]; !exists {
+		t.Error("expected NestedField to have 'message' property")
+	}
+
+	// The details type itself should NOT be registered (it's inlined)
+	if _, exists := spec.Components.Schemas["DetailsWithNested"]; exists {
+		t.Error("details type should be inlined, not registered as a separate schema")
+	}
+}
+
 func TestGenerateOpenAPI_ErrorDeduplication(t *testing.T) {
 	engine := newTestEngine()
 
