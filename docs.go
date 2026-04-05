@@ -487,6 +487,27 @@ func goTypeToSchema(goType string) *openapi.Schema {
 
 	// Handle maps
 	if strings.HasPrefix(goType, "map[") {
+		// Extract value type from map[K]V
+		// Find the closing bracket for the key type
+		depth := 0
+		valueStart := -1
+		for i, ch := range goType {
+			if ch == '[' {
+				depth++
+			} else if ch == ']' {
+				depth--
+				if depth == 0 {
+					valueStart = i + 1
+					break
+				}
+			}
+		}
+		if valueStart > 0 && valueStart < len(goType) {
+			return &openapi.Schema{
+				Type:                 openapi.NewSchemaType("object"),
+				AdditionalProperties: goTypeToSchema(goType[valueStart:]),
+			}
+		}
 		return &openapi.Schema{
 			Type:                 openapi.NewSchemaType("object"),
 			AdditionalProperties: true,
@@ -738,7 +759,12 @@ func (e *Engine) GenerateOpenAPI(identity Identity) *openapi.OpenAPI {
 
 	// Collect standalone model schemas
 	for _, model := range e.models {
-		collectSchemas(model.meta)
+		if model.schema != nil {
+			// Direct schema registration (enums, maps, arbitrary schemas)
+			schemas[model.name] = model.schema
+		} else {
+			collectSchemas(model.meta)
+		}
 	}
 
 	// Iterate over registered handlers
