@@ -140,6 +140,50 @@ func TestGoTypeToSchema(t *testing.T) {
 	}
 }
 
+func TestGoTypeToSchema_MapValueType(t *testing.T) {
+	t.Run("map[string]string", func(t *testing.T) {
+		schema := goTypeToSchema("map[string]string")
+		if schema.Type == nil || schema.Type.String() != "object" {
+			t.Errorf("expected object type, got %v", schema.Type)
+		}
+		ap, ok := schema.AdditionalProperties.(*openapi.Schema)
+		if !ok {
+			t.Fatal("expected additionalProperties to be a schema")
+		}
+		if ap.Type == nil || ap.Type.String() != "string" {
+			t.Errorf("expected string value type, got %v", ap.Type)
+		}
+	})
+
+	t.Run("map[string]SomeStruct", func(t *testing.T) {
+		schema := goTypeToSchema("map[string]SomeStruct")
+		if schema.Type == nil || schema.Type.String() != "object" {
+			t.Errorf("expected object type, got %v", schema.Type)
+		}
+		ap, ok := schema.AdditionalProperties.(*openapi.Schema)
+		if !ok {
+			t.Fatal("expected additionalProperties to be a schema")
+		}
+		if ap.Ref != "#/components/schemas/SomeStruct" {
+			t.Errorf("expected $ref to SomeStruct, got %q", ap.Ref)
+		}
+	})
+
+	t.Run("map[string][]int", func(t *testing.T) {
+		schema := goTypeToSchema("map[string][]int")
+		ap, ok := schema.AdditionalProperties.(*openapi.Schema)
+		if !ok {
+			t.Fatal("expected additionalProperties to be a schema")
+		}
+		if ap.Type == nil || ap.Type.String() != "array" {
+			t.Errorf("expected array value type, got %v", ap.Type)
+		}
+		if ap.Items == nil || ap.Items.Type == nil || ap.Items.Type.String() != "integer" {
+			t.Error("expected array items to be integer")
+		}
+	})
+}
+
 func TestGoTypeToSchema_ComplexType(t *testing.T) {
 	schema := goTypeToSchema("github.com/user/pkg.CustomType")
 
