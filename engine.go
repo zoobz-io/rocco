@@ -2,6 +2,7 @@ package rocco
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -37,6 +38,7 @@ type Engine struct {
 	cachedOpenAPISpec   []byte      // Cached JSON-encoded OpenAPI spec
 	openAPIOnce         sync.Once   // Ensures OpenAPI spec is generated only once
 	codec               Codec       // Default codec for handlers (nil = use handler default)
+	tlsConfig           *tls.Config // TLS configuration (nil = plain HTTP)
 }
 
 // NewEngine creates a new Engine.
@@ -85,6 +87,13 @@ func (e *Engine) WithAuthenticator(extractor func(context.Context, *http.Request
 // Handlers that explicitly call WithCodec() will use their own codec instead.
 func (e *Engine) WithCodec(codec Codec) *Engine {
 	e.codec = codec
+	return e
+}
+
+// WithTLSConfig sets the TLS configuration for the engine's HTTP server.
+// When set, the server will use TLS (HTTPS) instead of plain HTTP.
+func (e *Engine) WithTLSConfig(config *tls.Config) *Engine {
+	e.tlsConfig = config
 	return e
 }
 
@@ -506,14 +515,22 @@ func (e *Engine) Start(host string, port int) error {
 		ReadTimeout:  e.config.ReadTimeout,
 		WriteTimeout: e.config.WriteTimeout,
 		IdleTimeout:  e.config.IdleTimeout,
+		TLSConfig:    e.tlsConfig,
 	}
 
 	// Emit engine starting event
 	capitan.Info(e.ctx, EngineStarting,
 		AddressKey.Field(addr),
+		TLSEnabledKey.Field(e.tlsConfig != nil),
 	)
 
-	err := e.server.ListenAndServe()
+	var err error
+	if e.tlsConfig != nil {
+		// Certificates are provided via TLSConfig, so cert/key file args are empty.
+		err = e.server.ListenAndServeTLS("", "")
+	} else {
+		err = e.server.ListenAndServe()
+	}
 	if err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("server error: %w", err)
 	}
