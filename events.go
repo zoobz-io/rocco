@@ -161,7 +161,8 @@ var (
 // Event field keys (primitive types only).
 var (
 	// Engine fields.
-	AddressKey = capitan.NewStringKey("address")
+	AddressKey    = capitan.NewStringKey("address")
+	TLSEnabledKey = capitan.NewBoolKey("tls_enabled")
 
 	// Request/Response fields.
 	MethodKey      = capitan.NewStringKey("method")
