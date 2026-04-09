@@ -2,14 +2,23 @@ package rocco
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/zoobz-io/capitan"
 	"github.com/zoobz-io/openapi"
 )
 
@@ -1038,6 +1047,175 @@ func TestEngine_WithCodec_HandlerOverride(t *testing.T) {
 	spec := handler.Spec()
 	if spec.ContentType != "application/yaml" {
 		t.Errorf("expected content type 'application/yaml', got %q", spec.ContentType)
+	}
+}
+
+func TestEngine_WithTLSConfig(t *testing.T) {
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS13,
+	}
+	engine := newTestEngine().WithTLSConfig(tlsCfg)
+
+	if engine.tlsConfig == nil {
+		t.Fatal("expected tlsConfig to be set")
+	}
+	if engine.tlsConfig.MinVersion != tls.VersionTLS13 {
+		t.Errorf("expected MinVersion TLS 1.3, got %d", engine.tlsConfig.MinVersion)
+	}
+}
+
+func TestEngine_WithTLSConfig_Nil(t *testing.T) {
+	engine := newTestEngine().WithTLSConfig(nil)
+
+	if engine.tlsConfig != nil {
+		t.Error("expected tlsConfig to be nil")
+	}
+}
+
+func TestEngine_WithTLSConfig_Chaining(t *testing.T) {
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS13,
+	}
+	engine := newTestEngine().
+		WithTLSConfig(tlsCfg).
+		WithMiddleware(func(next http.Handler) http.Handler { return next })
+
+	if engine.tlsConfig == nil {
+		t.Fatal("expected tlsConfig to be set after chaining")
+	}
+	if len(engine.globalMiddleware) != 1 {
+		t.Errorf("expected 1 middleware, got %d", len(engine.globalMiddleware))
+	}
+}
+
+func TestEngine_Start_WithTLS(t *testing.T) {
+	setupSyncMode(t)
+
+	tlsCfg := newTestTLSConfig(t)
+	engine := NewEngine().WithTLSConfig(tlsCfg)
+
+	handler := NewHandler[NoBody, testOutput](
+		"tls-test",
+		"GET",
+		"/tls",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{Message: "secure"}, nil
+		},
+	)
+	engine.WithHandlers(handler)
+
+	started := make(chan struct{}, 1)
+	listener := capitan.Hook(EngineStarting, func(_ context.Context, _ *capitan.Event) {
+		started <- struct{}{}
+	})
+	defer listener.Close()
+
+	// Start server in background
+	go func() {
+		_ = engine.Start(HostLocal, 0)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("engine did not start")
+	}
+
+	// Verify the engine's tlsConfig was set on the server
+	if engine.server.TLSConfig != tlsCfg {
+		t.Error("expected server TLSConfig to match engine tlsConfig")
+	}
+
+	// Shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	if err := engine.Shutdown(ctx); err != nil {
+		t.Errorf("unexpected shutdown error: %v", err)
+	}
+}
+
+func TestEngine_Start_WithoutTLS(t *testing.T) {
+	setupSyncMode(t)
+
+	engine := NewEngine()
+
+	handler := NewHandler[NoBody, testOutput](
+		"plain-test",
+		"GET",
+		"/plain",
+		func(_ *Request[NoBody]) (testOutput, error) {
+			return testOutput{Message: "plain"}, nil
+		},
+	)
+	engine.WithHandlers(handler)
+
+	started := make(chan struct{}, 1)
+	listener := capitan.Hook(EngineStarting, func(_ context.Context, _ *capitan.Event) {
+		started <- struct{}{}
+	})
+	defer listener.Close()
+
+	// Start server in background
+	go func() {
+		_ = engine.Start(HostLocal, 0)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("engine did not start")
+	}
+
+	// Verify the engine itself has no TLS config
+	if engine.tlsConfig != nil {
+		t.Error("expected engine tlsConfig to be nil")
+	}
+
+	// Shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	if err := engine.Shutdown(ctx); err != nil {
+		t.Errorf("unexpected shutdown error: %v", err)
+	}
+}
+
+// newTestTLSConfig generates a self-signed TLS config for testing.
+func newTestTLSConfig(t *testing.T) *tls.Config {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{Organization: []string{"test"}},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(1 * time.Hour),
+		DNSNames:     []string{"localhost"},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("failed to create certificate: %v", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("failed to marshal key: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatalf("failed to load keypair: %v", err)
+	}
+
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{cert},
 	}
 }
 

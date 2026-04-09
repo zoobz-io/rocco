@@ -484,6 +484,72 @@ func TestEvents_RequestValidationOutputFailed(t *testing.T) {
 	}
 }
 
+func TestEvents_EngineStarting_TLSEnabled(t *testing.T) {
+	setupSyncMode(t)
+
+	var tlsEnabled bool
+	received := make(chan struct{}, 1)
+
+	listener := capitan.Hook(EngineStarting, func(_ context.Context, e *capitan.Event) {
+		tlsEnabled, _ = TLSEnabledKey.From(e)
+		received <- struct{}{}
+	})
+	defer listener.Close()
+
+	engine := NewEngine().WithTLSConfig(newTestTLSConfig(t))
+
+	go func() {
+		_ = engine.Start(HostLocal, 0)
+	}()
+
+	select {
+	case <-received:
+	case <-time.After(2 * time.Second):
+		t.Fatal("EngineStarting not emitted")
+	}
+
+	if !tlsEnabled {
+		t.Error("expected tls_enabled to be true")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	_ = engine.Shutdown(ctx)
+}
+
+func TestEvents_EngineStarting_TLSDisabled(t *testing.T) {
+	setupSyncMode(t)
+
+	var tlsEnabled bool
+	received := make(chan struct{}, 1)
+
+	listener := capitan.Hook(EngineStarting, func(_ context.Context, e *capitan.Event) {
+		tlsEnabled, _ = TLSEnabledKey.From(e)
+		received <- struct{}{}
+	})
+	defer listener.Close()
+
+	engine := NewEngine()
+
+	go func() {
+		_ = engine.Start(HostLocal, 0)
+	}()
+
+	select {
+	case <-received:
+	case <-time.After(2 * time.Second):
+		t.Fatal("EngineStarting not emitted")
+	}
+
+	if tlsEnabled {
+		t.Error("expected tls_enabled to be false")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	_ = engine.Shutdown(ctx)
+}
+
 func TestEvents_EngineShutdown(t *testing.T) {
 	setupSyncMode(t)
 
