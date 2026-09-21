@@ -20,6 +20,7 @@ func init() {
 	// Discriminated union tags
 	sentinel.Tag("discriminator")
 	sentinel.Tag("discriminate")
+	sentinel.Tag("discriminated_by")
 }
 
 // parseFloat64 parses a string to *float64
@@ -384,7 +385,7 @@ func metadataToSchema(meta sentinel.Metadata) *openapi.Schema {
 
 		// Check for discriminate tag — this field is a union
 		if discriminateTag, ok := field.Tags["discriminate"]; ok && discriminateTag != "" {
-			fieldSchema = buildDiscriminatedUnionSchema(propName, field.Type, discriminateTag, discriminators)
+			fieldSchema = buildDiscriminatedUnionSchema(propName, field.Type, discriminateTag, field.Tags["discriminated_by"], discriminators)
 		} else {
 			// Convert field type to schema
 			fieldSchema = goTypeToSchema(field.Type)
@@ -409,7 +410,10 @@ func metadataToSchema(meta sentinel.Metadata) *openapi.Schema {
 
 // buildDiscriminatedUnionSchema creates a oneOf schema with discriminator for a union field.
 // A slice fieldType wraps the oneOf in an array schema so a list of nodes isn't typed as one.
-func buildDiscriminatedUnionSchema(propName string, fieldType string, discriminateTag string, discriminators map[string]string) *openapi.Schema {
+// A non-empty discriminatedBy names a property carried inside each variant; the mapping is then
+// keyed by that property's value per variant. Otherwise a sibling discriminator tag keys the
+// mapping by variant type name.
+func buildDiscriminatedUnionSchema(propName, fieldType, discriminateTag, discriminatedBy string, discriminators map[string]string) *openapi.Schema {
 	typeNames := strings.Split(discriminateTag, ",")
 	oneOf := make([]*openapi.Schema, 0, len(typeNames))
 	mapping := make(map[string]string, len(typeNames))
@@ -421,18 +425,32 @@ func buildDiscriminatedUnionSchema(propName string, fieldType string, discrimina
 		}
 		ref := "#/components/schemas/" + typeName
 		oneOf = append(oneOf, &openapi.Schema{Ref: ref})
-		mapping[typeName] = ref
+
+		key := typeName
+		if discriminatedBy != "" {
+			if val, ok := variantDiscriminatorValue(typeName, discriminatedBy); ok {
+				key = val
+			}
+		}
+		mapping[key] = ref
 	}
 
 	union := &openapi.Schema{
 		OneOf: oneOf,
 	}
 
-	// Attach discriminator if a paired discriminator tag targets this field.
-	if discriminatorPropName, ok := discriminators[propName]; ok {
+	switch {
+	case discriminatedBy != "":
 		union.Discriminator = &openapi.Discriminator{
-			PropertyName: discriminatorPropName,
+			PropertyName: discriminatedBy,
 			Mapping:      mapping,
+		}
+	default:
+		if discriminatorPropName, ok := discriminators[propName]; ok {
+			union.Discriminator = &openapi.Discriminator{
+				PropertyName: discriminatorPropName,
+				Mapping:      mapping,
+			}
 		}
 	}
 
@@ -444,6 +462,32 @@ func buildDiscriminatedUnionSchema(propName string, fieldType string, discrimina
 	}
 
 	return union
+}
+
+// variantDiscriminatorValue reads the fixed value of the named property from a variant's
+// metadata: a const tag, or a single-value oneof enum. Reads field tags directly rather than
+// building the variant schema, which would recurse on self-referential unions.
+func variantDiscriminatorValue(typeName, propertyName string) (string, bool) {
+	meta, found := resolveTypeName(typeName)
+	if !found {
+		return "", false
+	}
+	for _, field := range meta.Fields {
+		name, _ := parseJSONTag(field)
+		if name != propertyName {
+			continue
+		}
+		if c := field.Tags["const"]; c != "" {
+			return c, true
+		}
+		if v := field.Tags["validate"]; v != "" {
+			if enum, ok := parseValidateTag(v, field.Type)["enum"].([]any); ok && len(enum) == 1 {
+				return fmt.Sprintf("%v", enum[0]), true
+			}
+		}
+		return "", false
+	}
+	return "", false
 }
 
 // resolveTypeName finds a sentinel Metadata entry by short type name,
