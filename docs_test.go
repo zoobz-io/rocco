@@ -1820,7 +1820,7 @@ func TestBuildDiscriminatedUnionSchema(t *testing.T) {
 		"event": "type",
 	}
 
-	schema := buildDiscriminatedUnionSchema("event", "any", "IngestCompletedEvent,IngestFailedEvent", discriminators)
+	schema := buildDiscriminatedUnionSchema("event", "any", "IngestCompletedEvent,IngestFailedEvent", "", discriminators)
 
 	t.Run("oneOf refs", func(t *testing.T) {
 		if len(schema.OneOf) != 2 {
@@ -1852,7 +1852,7 @@ func TestBuildDiscriminatedUnionSchema(t *testing.T) {
 
 func TestBuildDiscriminatedUnionSchema_NoDiscriminator(t *testing.T) {
 	// When no discriminator tag targets this field, discriminator should be nil
-	schema := buildDiscriminatedUnionSchema("event", "any", "TypeA,TypeB", map[string]string{})
+	schema := buildDiscriminatedUnionSchema("event", "any", "TypeA,TypeB", "", map[string]string{})
 
 	if len(schema.OneOf) != 2 {
 		t.Fatalf("expected 2 oneOf entries, got %d", len(schema.OneOf))
@@ -1864,7 +1864,7 @@ func TestBuildDiscriminatedUnionSchema_NoDiscriminator(t *testing.T) {
 
 func TestBuildDiscriminatedUnionSchema_EmptyTypeNames(t *testing.T) {
 	// Empty and whitespace-only type names should be skipped
-	schema := buildDiscriminatedUnionSchema("event", "any", "TypeA, ,TypeB, ", map[string]string{})
+	schema := buildDiscriminatedUnionSchema("event", "any", "TypeA, ,TypeB, ", "", map[string]string{})
 
 	if len(schema.OneOf) != 2 {
 		t.Fatalf("expected 2 oneOf entries (empty names skipped), got %d", len(schema.OneOf))
@@ -1943,7 +1943,7 @@ func TestBuildDiscriminatedUnionSchema_SliceField(t *testing.T) {
 		"children": "type",
 	}
 
-	schema := buildDiscriminatedUnionSchema("children", "[]any", "Text,Emphasis", discriminators)
+	schema := buildDiscriminatedUnionSchema("children", "[]any", "Text,Emphasis", "", discriminators)
 
 	if schema.Type == nil || schema.Type.String() != "array" {
 		t.Fatalf("expected array type, got %v", schema.Type)
@@ -1972,7 +1972,7 @@ func TestBuildDiscriminatedUnionSchema_SliceField(t *testing.T) {
 }
 
 func TestBuildDiscriminatedUnionSchema_PointerSliceField(t *testing.T) {
-	schema := buildDiscriminatedUnionSchema("children", "*[]any", "Text", map[string]string{})
+	schema := buildDiscriminatedUnionSchema("children", "*[]any", "Text", "", map[string]string{})
 
 	if schema.Type == nil || schema.Type.String() != "array" {
 		t.Fatalf("expected array type, got %v", schema.Type)
@@ -2011,6 +2011,102 @@ func TestMetadataToSchema_DiscriminatedUnionSlice(t *testing.T) {
 	}
 	if childrenProp.Items.OneOf[0].Ref != "#/components/schemas/Text" {
 		t.Errorf("expected ref to Text, got %q", childrenProp.Items.OneOf[0].Ref)
+	}
+}
+
+func TestBuildDiscriminatedUnionSchema_DiscriminatedBy(t *testing.T) {
+	type mdText struct {
+		Type  string `json:"type" validate:"oneof=text"`
+		Value string `json:"value"`
+	}
+	type mdEmphasis struct {
+		Type     string `json:"type" validate:"oneof=emphasis"`
+		Children []any  `json:"children" discriminate:"mdText,mdEmphasis" discriminated_by:"type"`
+	}
+	_ = NewModel[mdText]()
+	_ = NewModel[mdEmphasis]()
+
+	schema := buildDiscriminatedUnionSchema("children", "[]any", "mdText,mdEmphasis", "type", map[string]string{})
+
+	if schema.Type == nil || schema.Type.String() != "array" {
+		t.Fatalf("expected array type, got %v", schema.Type)
+	}
+	disc := schema.Items.Discriminator
+	if disc == nil {
+		t.Fatal("expected discriminator on items")
+	}
+	if disc.PropertyName != "type" {
+		t.Errorf("expected propertyName 'type', got %q", disc.PropertyName)
+	}
+	if disc.Mapping["text"] != "#/components/schemas/mdText" {
+		t.Errorf("expected mapping[text] -> mdText, got %q", disc.Mapping["text"])
+	}
+	if disc.Mapping["emphasis"] != "#/components/schemas/mdEmphasis" {
+		t.Errorf("expected mapping[emphasis] -> mdEmphasis, got %q", disc.Mapping["emphasis"])
+	}
+}
+
+func TestBuildDiscriminatedUnionSchema_DiscriminatedByFallback(t *testing.T) {
+	// A variant without the named property falls back to keying by type name.
+	type mdPlain struct {
+		Value string `json:"value"`
+	}
+	_ = NewModel[mdPlain]()
+
+	schema := buildDiscriminatedUnionSchema("child", "any", "mdPlain", "type", map[string]string{})
+
+	if schema.Discriminator == nil {
+		t.Fatal("expected discriminator")
+	}
+	if schema.Discriminator.PropertyName != "type" {
+		t.Errorf("expected propertyName 'type', got %q", schema.Discriminator.PropertyName)
+	}
+	if schema.Discriminator.Mapping["mdPlain"] != "#/components/schemas/mdPlain" {
+		t.Errorf("expected fallback mapping[mdPlain], got %v", schema.Discriminator.Mapping)
+	}
+}
+
+func TestBuildDiscriminatedUnionSchema_SiblingUnaffected(t *testing.T) {
+	// Without discriminated_by, a sibling discriminator still keys mapping by type name.
+	schema := buildDiscriminatedUnionSchema("event", "any", "TypeA,TypeB", "", map[string]string{"event": "kind"})
+
+	if schema.Discriminator == nil || schema.Discriminator.PropertyName != "kind" {
+		t.Fatalf("expected sibling discriminator with propertyName 'kind', got %v", schema.Discriminator)
+	}
+	if schema.Discriminator.Mapping["TypeA"] != "#/components/schemas/TypeA" {
+		t.Errorf("expected mapping keyed by type name, got %v", schema.Discriminator.Mapping)
+	}
+}
+
+func TestVariantDiscriminatorValue(t *testing.T) {
+	type mdImage struct {
+		Type string `json:"type" validate:"oneof=image"`
+		URL  string `json:"url"`
+	}
+	_ = NewModel[mdImage]()
+
+	val, ok := variantDiscriminatorValue("mdImage", "type")
+	if !ok || val != "image" {
+		t.Errorf("expected (image, true), got (%q, %v)", val, ok)
+	}
+
+	if _, ok := variantDiscriminatorValue("mdImage", "url"); ok {
+		t.Error("expected no value for a property with no const/single-enum")
+	}
+	if _, ok := variantDiscriminatorValue("NoSuchTypeXYZ", "type"); ok {
+		t.Error("expected no value for an unknown type")
+	}
+}
+
+func TestVariantDiscriminatorValue_ConstTag(t *testing.T) {
+	type mdBreak struct {
+		Type string `json:"type" const:"break"`
+	}
+	_ = NewModel[mdBreak]()
+
+	val, ok := variantDiscriminatorValue("mdBreak", "type")
+	if !ok || val != "break" {
+		t.Errorf("expected (break, true) from const tag, got (%q, %v)", val, ok)
 	}
 }
 
