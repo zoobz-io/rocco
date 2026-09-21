@@ -16,6 +16,7 @@ func init() {
 	// Documentation-only tags
 	sentinel.Tag("example")
 	sentinel.Tag("description")
+	sentinel.Tag("const")
 	// Discriminated union tags
 	sentinel.Tag("discriminator")
 	sentinel.Tag("discriminate")
@@ -340,6 +341,14 @@ func applyOpenAPITags(schema *openapi.Schema, field sentinel.FieldMetadata) {
 			schemaType = schema.Type.String()
 		}
 		schema.Example = parseExample(example, schemaType)
+	}
+
+	if constVal := field.Tags["const"]; constVal != "" {
+		schemaType := ""
+		if schema.Type != nil {
+			schemaType = schema.Type.String()
+		}
+		schema.Const = parseExample(constVal, schemaType)
 	}
 }
 

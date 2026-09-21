@@ -733,6 +733,80 @@ func TestApplyOpenAPITags_Example(t *testing.T) {
 	}
 }
 
+func TestApplyOpenAPITags_Const(t *testing.T) {
+	tests := []struct {
+		name       string
+		schemaType string
+		constValue string
+		want       any
+	}{
+		{"string", "string", "heading", "heading"},
+		{"integer", "integer", "7", 7},
+		{"number", "number", "1.5", 1.5},
+		{"boolean", "boolean", "true", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			field := sentinel.FieldMetadata{
+				Name: "Field",
+				Type: tt.schemaType,
+				Tags: map[string]string{
+					"const": tt.constValue,
+				},
+			}
+
+			schema := &openapi.Schema{Type: openapi.NewSchemaType(tt.schemaType)}
+			applyOpenAPITags(schema, field)
+
+			if schema.Const != tt.want {
+				t.Errorf("expected const %v (%T), got %v (%T)", tt.want, tt.want, schema.Const, schema.Const)
+			}
+		})
+	}
+}
+
+func TestApplyOpenAPITags_ConstUnset(t *testing.T) {
+	field := sentinel.FieldMetadata{
+		Name: "Field",
+		Type: "string",
+		Tags: map[string]string{"description": "no const here"},
+	}
+
+	schema := &openapi.Schema{Type: openapi.NewSchemaType("string")}
+	applyOpenAPITags(schema, field)
+
+	if schema.Const != nil {
+		t.Errorf("expected const to be nil, got %v", schema.Const)
+	}
+}
+
+func TestMetadataToSchema_ConstTag(t *testing.T) {
+	meta := sentinel.Metadata{
+		TypeName: "Heading",
+		Fields: []sentinel.FieldMetadata{
+			{
+				Name: "Type",
+				Type: "string",
+				Tags: map[string]string{"json": "type", "const": "heading"},
+			},
+		},
+	}
+
+	schema := metadataToSchema(meta)
+
+	typeProp := schema.Properties["type"]
+	if typeProp == nil {
+		t.Fatal("expected 'type' property")
+	}
+	if typeProp.Type == nil || typeProp.Type.String() != "string" {
+		t.Errorf("expected string type, got %v", typeProp.Type)
+	}
+	if typeProp.Const != "heading" {
+		t.Errorf("expected const 'heading', got %v", typeProp.Const)
+	}
+}
+
 func TestApplyOpenAPITags_Pattern(t *testing.T) {
 	// Note: pattern validation is not supported via validate tags
 	// This test is kept for backward compatibility with custom tags if needed
