@@ -1746,7 +1746,7 @@ func TestBuildDiscriminatedUnionSchema(t *testing.T) {
 		"event": "type",
 	}
 
-	schema := buildDiscriminatedUnionSchema("event", "IngestCompletedEvent,IngestFailedEvent", discriminators)
+	schema := buildDiscriminatedUnionSchema("event", "any", "IngestCompletedEvent,IngestFailedEvent", discriminators)
 
 	t.Run("oneOf refs", func(t *testing.T) {
 		if len(schema.OneOf) != 2 {
@@ -1778,7 +1778,7 @@ func TestBuildDiscriminatedUnionSchema(t *testing.T) {
 
 func TestBuildDiscriminatedUnionSchema_NoDiscriminator(t *testing.T) {
 	// When no discriminator tag targets this field, discriminator should be nil
-	schema := buildDiscriminatedUnionSchema("event", "TypeA,TypeB", map[string]string{})
+	schema := buildDiscriminatedUnionSchema("event", "any", "TypeA,TypeB", map[string]string{})
 
 	if len(schema.OneOf) != 2 {
 		t.Fatalf("expected 2 oneOf entries, got %d", len(schema.OneOf))
@@ -1790,7 +1790,7 @@ func TestBuildDiscriminatedUnionSchema_NoDiscriminator(t *testing.T) {
 
 func TestBuildDiscriminatedUnionSchema_EmptyTypeNames(t *testing.T) {
 	// Empty and whitespace-only type names should be skipped
-	schema := buildDiscriminatedUnionSchema("event", "TypeA, ,TypeB, ", map[string]string{})
+	schema := buildDiscriminatedUnionSchema("event", "any", "TypeA, ,TypeB, ", map[string]string{})
 
 	if len(schema.OneOf) != 2 {
 		t.Fatalf("expected 2 oneOf entries (empty names skipped), got %d", len(schema.OneOf))
@@ -1862,6 +1862,82 @@ func TestMetadataToSchema_DiscriminatedUnion(t *testing.T) {
 			t.Errorf("expected 2 required fields, got %v", schema.Required)
 		}
 	})
+}
+
+func TestBuildDiscriminatedUnionSchema_SliceField(t *testing.T) {
+	discriminators := map[string]string{
+		"children": "type",
+	}
+
+	schema := buildDiscriminatedUnionSchema("children", "[]any", "Text,Emphasis", discriminators)
+
+	if schema.Type == nil || schema.Type.String() != "array" {
+		t.Fatalf("expected array type, got %v", schema.Type)
+	}
+	if len(schema.OneOf) != 0 {
+		t.Errorf("expected no oneOf on the array schema, got %d", len(schema.OneOf))
+	}
+	if schema.Items == nil {
+		t.Fatal("expected items schema")
+	}
+	if len(schema.Items.OneOf) != 2 {
+		t.Fatalf("expected 2 oneOf entries under items, got %d", len(schema.Items.OneOf))
+	}
+	if schema.Items.OneOf[0].Ref != "#/components/schemas/Text" {
+		t.Errorf("expected ref to Text, got %q", schema.Items.OneOf[0].Ref)
+	}
+	if schema.Discriminator != nil {
+		t.Error("expected no discriminator on the array schema")
+	}
+	if schema.Items.Discriminator == nil {
+		t.Fatal("expected discriminator on items schema")
+	}
+	if schema.Items.Discriminator.PropertyName != "type" {
+		t.Errorf("expected propertyName 'type', got %q", schema.Items.Discriminator.PropertyName)
+	}
+}
+
+func TestBuildDiscriminatedUnionSchema_PointerSliceField(t *testing.T) {
+	schema := buildDiscriminatedUnionSchema("children", "*[]any", "Text", map[string]string{})
+
+	if schema.Type == nil || schema.Type.String() != "array" {
+		t.Fatalf("expected array type, got %v", schema.Type)
+	}
+	if schema.Items == nil || len(schema.Items.OneOf) != 1 {
+		t.Fatalf("expected 1 oneOf entry under items, got %v", schema.Items)
+	}
+}
+
+func TestMetadataToSchema_DiscriminatedUnionSlice(t *testing.T) {
+	meta := sentinel.Metadata{
+		TypeName: "Heading",
+		Fields: []sentinel.FieldMetadata{
+			{
+				Name: "Children",
+				Type: "[]any",
+				Tags: map[string]string{
+					"json":         "children",
+					"discriminate": "Text",
+				},
+			},
+		},
+	}
+
+	schema := metadataToSchema(meta)
+
+	childrenProp := schema.Properties["children"]
+	if childrenProp == nil {
+		t.Fatal("expected 'children' property")
+	}
+	if childrenProp.Type == nil || childrenProp.Type.String() != "array" {
+		t.Fatalf("expected array type, got %v", childrenProp.Type)
+	}
+	if childrenProp.Items == nil || len(childrenProp.Items.OneOf) != 1 {
+		t.Fatalf("expected oneOf under items, got %v", childrenProp.Items)
+	}
+	if childrenProp.Items.OneOf[0].Ref != "#/components/schemas/Text" {
+		t.Errorf("expected ref to Text, got %q", childrenProp.Items.OneOf[0].Ref)
+	}
 }
 
 func TestResolveTypeName(t *testing.T) {
