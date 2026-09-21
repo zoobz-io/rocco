@@ -375,7 +375,7 @@ func metadataToSchema(meta sentinel.Metadata) *openapi.Schema {
 
 		// Check for discriminate tag — this field is a union
 		if discriminateTag, ok := field.Tags["discriminate"]; ok && discriminateTag != "" {
-			fieldSchema = buildDiscriminatedUnionSchema(propName, discriminateTag, discriminators)
+			fieldSchema = buildDiscriminatedUnionSchema(propName, field.Type, discriminateTag, discriminators)
 		} else {
 			// Convert field type to schema
 			fieldSchema = goTypeToSchema(field.Type)
@@ -399,7 +399,8 @@ func metadataToSchema(meta sentinel.Metadata) *openapi.Schema {
 }
 
 // buildDiscriminatedUnionSchema creates a oneOf schema with discriminator for a union field.
-func buildDiscriminatedUnionSchema(propName string, discriminateTag string, discriminators map[string]string) *openapi.Schema {
+// A slice fieldType wraps the oneOf in an array schema so a list of nodes isn't typed as one.
+func buildDiscriminatedUnionSchema(propName string, fieldType string, discriminateTag string, discriminators map[string]string) *openapi.Schema {
 	typeNames := strings.Split(discriminateTag, ",")
 	oneOf := make([]*openapi.Schema, 0, len(typeNames))
 	mapping := make(map[string]string, len(typeNames))
@@ -414,19 +415,26 @@ func buildDiscriminatedUnionSchema(propName string, discriminateTag string, disc
 		mapping[typeName] = ref
 	}
 
-	schema := &openapi.Schema{
+	union := &openapi.Schema{
 		OneOf: oneOf,
 	}
 
-	// Attach discriminator if a paired discriminator tag targets this field
+	// Attach discriminator if a paired discriminator tag targets this field.
 	if discriminatorPropName, ok := discriminators[propName]; ok {
-		schema.Discriminator = &openapi.Discriminator{
+		union.Discriminator = &openapi.Discriminator{
 			PropertyName: discriminatorPropName,
 			Mapping:      mapping,
 		}
 	}
 
-	return schema
+	if strings.HasPrefix(strings.TrimPrefix(fieldType, "*"), "[]") {
+		return &openapi.Schema{
+			Type:  openapi.NewSchemaType("array"),
+			Items: union,
+		}
+	}
+
+	return union
 }
 
 // resolveTypeName finds a sentinel Metadata entry by short type name,
